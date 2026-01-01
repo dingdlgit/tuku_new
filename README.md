@@ -1,11 +1,42 @@
-<div align="center">
+# 图酷 (TuKu) - Online Image Processor
 
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
+## 📁 Project Structure
 
-  <h1>Built with AI Studio</h2>
+```
+/
+├── components/       # React UI Components
+├── server/           # Backend Node.js Code
+│   ├── index.js      # Server logic
+│   └── package.json
+├── App.tsx           # Main React App
+├── Dockerfile        # Frontend Build definition
+├── Dockerfile.backend # Backend Build definition
+├── docker-compose.yml # Orchestration
+├── nginx.conf        # Web Server Config
+└── ...
+```
 
-  <p>The fastest path from prompt to production with Gemini.</p>
+## 🚀 One-Click Deployment (Server)
 
-  <a href="https://aistudio.google.com/apps">Start building</a>
+1.  **Transfer Files**: Upload this entire directory to your Ubuntu server (e.g., via SCP or Git).
+2.  **Run Deploy Command**:
+    ```bash
+    docker compose up -d --build
+    ```
+3.  **Access**: Open your browser and visit `http://YOUR_SERVER_IP`.
 
-</div>
+## 🔧 Local Development
+
+1.  **Backend**:
+    ```bash
+    cd server
+    npm install
+    npm start
+    ```
+2.  **Frontend** (Requires creating a full vite project if running outside Docker):
+    *   This codebase is optimized for Docker deployment. For local dev, ensure you have Vite installed.
+
+## 📝 Features
+*   **Upload**: Drag & drop up to 20MB.
+*   **Process**: Resize, Convert (WebP/PNG/JPG), Rotate, Flip, Grayscale, Blur.
+*   **Security**: Auto-cleanup of files every 30 minutes.
