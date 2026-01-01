@@ -38,7 +38,17 @@ function App() {
         body: formData,
       });
 
-      if (!response.ok) throw new Error('Upload failed');
+      if (!response.ok) {
+        let errorMessage = `Upload failed (${response.status})`;
+        try {
+          const errorData = await response.json();
+          if (errorData.error) errorMessage = errorData.error;
+        } catch (e) {
+          // If response isn't JSON (e.g. Nginx 504 HTML), use status text
+          errorMessage = `Upload failed: ${response.statusText || response.status}`;
+        }
+        throw new Error(errorMessage);
+      }
 
       const data: UploadResponse = await response.json();
       setCurrentFile(data);
@@ -48,9 +58,9 @@ function App() {
         width: data.width || null,
         height: data.height || null
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Failed to upload image');
+      alert(error.message || 'Failed to upload image');
     } finally {
       setIsUploading(false);
     }
@@ -70,13 +80,22 @@ function App() {
         })
       });
 
-      if (!response.ok) throw new Error('Processing failed');
+      if (!response.ok) {
+        let errorMessage = 'Processing failed';
+        try {
+          const errorData = await response.json();
+          if (errorData.error) errorMessage = errorData.error;
+        } catch (e) {
+           errorMessage = `Processing failed: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
 
       const data: ProcessResponse = await response.json();
       setResult(data);
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
-      alert('Failed to process image');
+      alert(error.message || 'Failed to process image');
     } finally {
       setIsProcessing(false);
     }

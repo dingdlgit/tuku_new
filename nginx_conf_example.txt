@@ -15,6 +15,13 @@ http {
     # Allow larger uploads (25MB to be safe for 20MB limit)
     client_max_body_size 25M;
 
+    # Increase timeouts to prevent 504 Gateway Timeouts during large file uploads/processing
+    proxy_connect_timeout 300s;
+    proxy_send_timeout 300s;
+    proxy_read_timeout 300s;
+    fastcgi_send_timeout 300s;
+    fastcgi_read_timeout 300s;
+
     upstream backend_upstream {
         server backend:3000;
     }

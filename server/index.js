@@ -66,12 +66,17 @@ app.use('/api/processed', express.static(PROCESSED_DIR));
 
 // Routes
 app.post('/api/upload', upload.single('image'), async (req, res) => {
+  console.log('Upload request received');
   if (!req.file) {
+    console.error('No file received');
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
+  console.log(`Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
+
   try {
     const metadata = await sharp(req.file.path).metadata();
+    console.log('Metadata extracted successfully');
     
     // Return URL matching the static middleware route above
     res.json({
@@ -107,6 +112,8 @@ app.post('/api/process', async (req, res) => {
   const inputPath = path.join(UPLOAD_DIR, originalFile);
   const outputFilename = `tuku_${id}_${Date.now()}.${options.format === 'original' ? path.extname(originalFile).slice(1) : options.format}`;
   const outputPath = path.join(PROCESSED_DIR, outputFilename);
+
+  console.log(`Processing image ${id} with options:`, JSON.stringify(options));
 
   try {
     let pipeline = sharp(inputPath);
@@ -162,6 +169,7 @@ app.post('/api/process', async (req, res) => {
     await pipeline.toFile(outputPath);
     
     const stats = fs.statSync(outputPath);
+    console.log(`Processing complete: ${outputFilename}`);
 
     res.json({
       url: `/api/processed/${outputFilename}`,
@@ -173,6 +181,18 @@ app.post('/api/process', async (req, res) => {
     console.error('Processing error:', error);
     res.status(500).json({ error: 'Processing failed' });
   }
+});
+
+// Global Error Handler (catches Multer limit errors)
+app.use((err, req, res, next) => {
+  if (err instanceof multer.MulterError) {
+    if (err.code === 'LIMIT_FILE_SIZE') {
+      console.error('Upload blocked: File too large');
+      return res.status(400).json({ error: 'File too large (Max 20MB)' });
+    }
+  }
+  console.error('Unhandled server error:', err);
+  res.status(500).json({ error: 'Internal Server Error' });
 });
 
 app.listen(PORT, () => {
