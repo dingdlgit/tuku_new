@@ -52,9 +52,14 @@ function App() {
 
       const data: UploadResponse = await response.json();
       setCurrentFile(data);
-      // Reset sensitive options but keep generic ones if desired
+      
+      // Determine safe default options
+      // If uploaded file is BMP, switch default output to PNG because Sharp cannot write BMP
+      const isBmp = data.originalName.toLowerCase().endsWith('.bmp') || file.type === 'image/bmp';
+      
       setOptions({
         ...defaultOptions,
+        format: isBmp ? ImageFormat.PNG : ImageFormat.ORIGINAL,
         width: data.width || null,
         height: data.height || null
       });

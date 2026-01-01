@@ -75,7 +75,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   console.log(`Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
 
   try {
-    const metadata = await sharp(req.file.path).metadata();
+    // FIX: Add failOnError: false to help with some BMP/strict formats
+    const metadata = await sharp(req.file.path, { failOnError: false }).metadata();
     console.log('Metadata extracted successfully');
     
     // Return URL matching the static middleware route above
@@ -90,7 +91,17 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     });
   } catch (error) {
     console.error('Metadata error:', error);
-    res.status(500).json({ error: 'Failed to analyze image' });
+    // If metadata fails completely, try to return basic info so user isn't blocked
+    // Browser might still be able to render it via URL
+    res.json({
+      id: path.parse(req.file.filename).name,
+      filename: req.file.filename,
+      url: `/api/uploads/${req.file.filename}`,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      width: 0, 
+      height: 0
+    });
   }
 });
 
@@ -110,13 +121,25 @@ app.post('/api/process', async (req, res) => {
   }
 
   const inputPath = path.join(UPLOAD_DIR, originalFile);
-  const outputFilename = `tuku_${id}_${Date.now()}.${options.format === 'original' ? path.extname(originalFile).slice(1) : options.format}`;
+  
+  // Determine output format
+  let format = options.format === 'original' 
+    ? path.extname(originalFile).slice(1).toLowerCase() 
+    : options.format;
+
+  // FIX: Sharp cannot write BMP. Force BMP to PNG.
+  if (format === 'bmp') {
+    format = 'png';
+  }
+
+  const outputFilename = `tuku_${id}_${Date.now()}.${format}`;
   const outputPath = path.join(PROCESSED_DIR, outputFilename);
 
   console.log(`Processing image ${id} with options:`, JSON.stringify(options));
 
   try {
-    let pipeline = sharp(inputPath);
+    // FIX: Add failOnError: false for reading
+    let pipeline = sharp(inputPath, { failOnError: false });
 
     // 1. Resize
     if (options.width || options.height) {
@@ -153,9 +176,7 @@ app.post('/api/process', async (req, res) => {
        }]);
     }
 
-    // 5. Format
-    const format = options.format === 'original' ? path.extname(originalFile).slice(1) : options.format;
-    
+    // 5. Format Output
     // Quality adjustments
     if (['jpeg', 'webp', 'avif'].includes(format)) {
         // @ts-ignore
@@ -163,6 +184,7 @@ app.post('/api/process', async (req, res) => {
     } else if (format === 'png') {
         pipeline = pipeline.png({ quality: options.quality });
     } else {
+        // Fallback for others (gif, etc)
         pipeline = pipeline.toFormat(format);
     }
 
