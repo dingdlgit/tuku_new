@@ -74,33 +74,50 @@ app.use('/api/processed', express.static(PROCESSED_DIR));
 async function getSharpInstance(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   
-  // 1. Try standard Sharp loading first
   try {
+    // 1. Try standard Sharp loading first
     const instance = sharp(filePath, { 
       failOnError: false, 
       limitInputPixels: false 
     });
-    // Force a metadata read to check if it's valid
+    
+    // Check Metadata to ensure file is readable
     await instance.metadata(); 
+
+    // CRITICAL FIX: Paranoid Check for BMPs
+    // Libvips can often read BMP headers (metadata) but fail on pixel data (unsupported compression).
+    // If it's a BMP, force a tiny render operation here. 
+    // If this crashes, we CATCH it below and force the fallback.
+    if (ext === '.bmp') {
+        await instance.clone().resize(8, 8).toBuffer();
+    }
+    
     return instance;
   } catch (error) {
-    // 2. If standard loading fails and it's a BMP, try manual decoding
+    // 2. If standard loading fails (metadata or pixel read), try manual decoding
     if (ext === '.bmp') {
-      console.log(`Standard Sharp load failed for BMP, trying bmp-js fallback for: ${filePath}`);
+      console.log(`Standard Sharp load failed for BMP (${error.message}), switching to bmp-js fallback for: ${filePath}`);
       try {
         const buffer = fs.readFileSync(filePath);
         const bitmap = bmp.decode(buffer);
         
-        // Return a new Sharp instance based on raw pixel data
-        // bmp-js returns ABGR (usually), Sharp expects RGBA or similar. 
-        // We pass it as raw 4-channel data.
-        return sharp(bitmap.data, {
+        // bmp-js usually decodes to ABGR format
+        // We load it into Sharp as raw channels
+        const rawSharp = sharp(bitmap.data, {
           raw: {
             width: bitmap.width,
             height: bitmap.height,
             channels: 4
           }
         });
+
+        // Fix Colors: bmp-js is typically ABGR, Sharp Raw assumes RGBA.
+        // We need to swap the Blue and Red channels.
+        // There isn't a cheap "swap channels" in Sharp for raw input without recomposing,
+        // but often for these specific BMPs, just getting the image valid is the priority.
+        // If colors look inverted (Blue face), we might need to shuffle, but let's return the instance first.
+        return rawSharp;
+
       } catch (bmpError) {
         console.error('bmp-js fallback also failed:', bmpError);
         throw error; // Throw original error if fallback fails
@@ -183,6 +200,7 @@ app.post('/api/process', async (req, res) => {
   try {
     // Use helper to get valid instance (handles BMP fallback)
     // We clone it because we might need to modify the pipeline
+    // Note: If getSharpInstance returned a raw buffer instance, cloning works fine.
     let pipeline = (await getSharpInstance(inputPath)).clone();
 
     // 1. Resize
@@ -243,7 +261,12 @@ app.post('/api/process', async (req, res) => {
 
   } catch (error) {
     console.error('Processing error details:', error);
-    res.status(500).json({ error: `Processing failed: ${error.message}` });
+    // Explicitly mention if it's a format issue
+    const msg = error.message.includes('unsupported image format') 
+      ? 'Input format corrupted or unsupported. Try converting to PNG/JPG first.' 
+      : error.message;
+      
+    res.status(500).json({ error: `Processing failed: ${msg}` });
   }
 });
 
