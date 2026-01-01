@@ -60,26 +60,28 @@ setInterval(() => {
   });
 }, CLEANUP_INTERVAL);
 
-// Serve static files (Updated to match the JSON response URLs)
+// Serve static files
 app.use('/api/uploads', express.static(UPLOAD_DIR));
 app.use('/api/processed', express.static(PROCESSED_DIR));
 
 // Routes
 app.post('/api/upload', upload.single('image'), async (req, res) => {
-  console.log('Upload request received');
   if (!req.file) {
-    console.error('No file received');
     return res.status(400).json({ error: 'No file uploaded' });
   }
 
   console.log(`Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
 
   try {
-    // FIX: Add failOnError: false to help with some BMP/strict formats
-    const metadata = await sharp(req.file.path, { failOnError: false }).metadata();
-    console.log('Metadata extracted successfully');
+    // FIX: limitInputPixels: false is required for some large uncompressed BMPs
+    // failOnError: false allows reading slightly malformed headers
+    const metadata = await sharp(req.file.path, { 
+      failOnError: false, 
+      limitInputPixels: false 
+    }).metadata();
     
-    // Return URL matching the static middleware route above
+    console.log('Metadata extracted:', metadata.width, 'x', metadata.height);
+    
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,
@@ -91,8 +93,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     });
   } catch (error) {
     console.error('Metadata error:', error);
-    // If metadata fails completely, try to return basic info so user isn't blocked
-    // Browser might still be able to render it via URL
+    // If we can't read metadata, we return 0 width/height.
+    // The frontend will treat this as "Unknown dimensions" but file exists.
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,
@@ -112,7 +114,6 @@ app.post('/api/process', async (req, res) => {
     return res.status(400).json({ error: 'Missing parameters' });
   }
 
-  // Find original file
   const files = fs.readdirSync(UPLOAD_DIR);
   const originalFile = files.find(f => f.startsWith(id));
   
@@ -123,23 +124,29 @@ app.post('/api/process', async (req, res) => {
   const inputPath = path.join(UPLOAD_DIR, originalFile);
   
   // Determine output format
-  let format = options.format === 'original' 
-    ? path.extname(originalFile).slice(1).toLowerCase() 
-    : options.format;
+  let format = options.format;
+  if (format === 'original') {
+    format = path.extname(originalFile).slice(1).toLowerCase();
+  }
 
-  // FIX: Sharp cannot write BMP. Force BMP to PNG.
+  // CRITICAL FIX: Sharp cannot write BMP files. 
+  // If user requests BMP or Original is BMP, we MUST switch to PNG to prevent crash.
   if (format === 'bmp') {
+    console.log('BMP output requested. Converting to PNG as Sharp does not support BMP write.');
     format = 'png';
   }
 
   const outputFilename = `tuku_${id}_${Date.now()}.${format}`;
   const outputPath = path.join(PROCESSED_DIR, outputFilename);
 
-  console.log(`Processing image ${id} with options:`, JSON.stringify(options));
+  console.log(`Processing image ${id} -> ${format}`);
 
   try {
-    // FIX: Add failOnError: false for reading
-    let pipeline = sharp(inputPath, { failOnError: false });
+    // FIX: Ensure BMP reading is robust during processing too
+    let pipeline = sharp(inputPath, { 
+      failOnError: false, 
+      limitInputPixels: false 
+    });
 
     // 1. Resize
     if (options.width || options.height) {
@@ -157,12 +164,12 @@ app.post('/api/process', async (req, res) => {
 
     // 3. Filters
     if (options.grayscale) pipeline = pipeline.grayscale();
-    if (options.blur > 0) pipeline = pipeline.blur(0.3 + options.blur); // Sharp needs > 0.3
+    if (options.blur > 0) pipeline = pipeline.blur(0.3 + options.blur);
     if (options.sharpen) pipeline = pipeline.sharpen();
 
-    // 4. Watermark (Text via SVG overlay)
+    // 4. Watermark
     if (options.watermarkText) {
-       const width = options.width || 800; // approximation if not resizing
+       const width = options.width || 800;
        const svgText = `
         <svg width="${width}" height="100">
           <style>
@@ -177,14 +184,14 @@ app.post('/api/process', async (req, res) => {
     }
 
     // 5. Format Output
-    // Quality adjustments
     if (['jpeg', 'webp', 'avif'].includes(format)) {
         // @ts-ignore
         pipeline = pipeline.toFormat(format, { quality: options.quality });
     } else if (format === 'png') {
         pipeline = pipeline.png({ quality: options.quality });
     } else {
-        // Fallback for others (gif, etc)
+        // Fallback (mostly for GIF/TIFF)
+        // If it was BMP, it was already switched to PNG above
         pipeline = pipeline.toFormat(format);
     }
 
@@ -201,15 +208,14 @@ app.post('/api/process', async (req, res) => {
 
   } catch (error) {
     console.error('Processing error:', error);
-    res.status(500).json({ error: 'Processing failed' });
+    res.status(500).json({ error: 'Processing failed: ' + error.message });
   }
 });
 
-// Global Error Handler (catches Multer limit errors)
+// Global Error Handler
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {
-      console.error('Upload blocked: File too large');
       return res.status(400).json({ error: 'File too large (Max 20MB)' });
     }
   }

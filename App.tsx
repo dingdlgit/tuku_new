@@ -44,7 +44,6 @@ function App() {
           const errorData = await response.json();
           if (errorData.error) errorMessage = errorData.error;
         } catch (e) {
-          // If response isn't JSON (e.g. Nginx 504 HTML), use status text
           errorMessage = `Upload failed: ${response.statusText || response.status}`;
         }
         throw new Error(errorMessage);
@@ -53,13 +52,11 @@ function App() {
       const data: UploadResponse = await response.json();
       setCurrentFile(data);
       
-      // Determine safe default options
-      // If uploaded file is BMP, switch default output to PNG because Sharp cannot write BMP
-      const isBmp = data.originalName.toLowerCase().endsWith('.bmp') || file.type === 'image/bmp';
-      
+      // If uploading BMP, we can now set format to BMP (but user is warned it outputs PNG)
+      // or just keep it ORIGINAL which the backend also handles safely now.
       setOptions({
         ...defaultOptions,
-        format: isBmp ? ImageFormat.PNG : ImageFormat.ORIGINAL,
+        format: ImageFormat.ORIGINAL,
         width: data.width || null,
         height: data.height || null
       });

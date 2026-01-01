@@ -37,23 +37,28 @@ export const Controls: React.FC<ControlsProps> = ({
         <section>
           <label className="block text-sm font-medium text-slate-700 mb-2">Format</label>
           <div className="grid grid-cols-3 gap-2">
-            {[ImageFormat.ORIGINAL, ImageFormat.JPEG, ImageFormat.PNG, ImageFormat.WEBP].map(fmt => (
+            {[ImageFormat.ORIGINAL, ImageFormat.JPEG, ImageFormat.PNG, ImageFormat.WEBP, ImageFormat.BMP].map(fmt => (
               <button
                 key={fmt}
                 onClick={() => updateOption('format', fmt)}
-                className={`px-3 py-2 text-sm rounded-md border ${
+                className={`px-3 py-2 text-sm rounded-md border uppercase ${
                   options.format === fmt 
                     ? 'bg-indigo-600 text-white border-indigo-600' 
                     : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
                 }`}
               >
-                {fmt.toUpperCase()}
+                {fmt === 'original' ? 'ORIG' : fmt}
               </button>
             ))}
           </div>
+          {options.format === ImageFormat.BMP && (
+            <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-2 rounded">
+              Note: BMP output is converted to PNG for compatibility.
+            </p>
+          )}
         </section>
 
-        {options.format !== ImageFormat.PNG && (
+        {options.format !== ImageFormat.PNG && options.format !== ImageFormat.BMP && (
           <section>
             <div className="flex justify-between mb-2">
               <label className="text-sm font-medium text-slate-700">Quality</label>
@@ -77,7 +82,7 @@ export const Controls: React.FC<ControlsProps> = ({
             <div className="relative w-full">
               <input
                 type="number"
-                placeholder={originalDimensions?.width?.toString() || 'Width'}
+                placeholder={originalDimensions?.width ? originalDimensions.width.toString() : 'Width'}
                 value={options.width || ''}
                 onChange={(e) => updateOption('width', e.target.value ? Number(e.target.value) : null)}
                 className="w-full pl-3 pr-8 py-2 text-sm border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
@@ -88,7 +93,7 @@ export const Controls: React.FC<ControlsProps> = ({
             <div className="relative w-full">
               <input
                 type="number"
-                placeholder={originalDimensions?.height?.toString() || 'Height'}
+                placeholder={originalDimensions?.height ? originalDimensions.height.toString() : 'Height'}
                 value={options.height || ''}
                 onChange={(e) => updateOption('height', e.target.value ? Number(e.target.value) : null)}
                 className="w-full pl-3 pr-8 py-2 text-sm border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
