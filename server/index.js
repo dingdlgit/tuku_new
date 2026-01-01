@@ -101,22 +101,27 @@ async function getSharpInstance(filePath) {
         const buffer = fs.readFileSync(filePath);
         const bitmap = bmp.decode(buffer);
         
-        // bmp-js usually decodes to ABGR format
-        // We load it into Sharp as raw channels
-        const rawSharp = sharp(bitmap.data, {
+        // bmp-js returns data in ABGR format [A, B, G, R]
+        // Sharp raw input expects RGBA format [R, G, B, A]
+        // We must manually swap the channels.
+        const abgr = bitmap.data;
+        const len = abgr.length;
+        const rgba = Buffer.alloc(len);
+
+        for (let i = 0; i < len; i += 4) {
+          rgba[i]     = abgr[i + 3]; // R (from last byte of ABGR)
+          rgba[i + 1] = abgr[i + 2]; // G
+          rgba[i + 2] = abgr[i + 1]; // B
+          rgba[i + 3] = abgr[i];     // A (from first byte of ABGR)
+        }
+
+        return sharp(rgba, {
           raw: {
             width: bitmap.width,
             height: bitmap.height,
             channels: 4
           }
         });
-
-        // Fix Colors: bmp-js is typically ABGR, Sharp Raw assumes RGBA.
-        // We need to swap the Blue and Red channels.
-        // There isn't a cheap "swap channels" in Sharp for raw input without recomposing,
-        // but often for these specific BMPs, just getting the image valid is the priority.
-        // If colors look inverted (Blue face), we might need to shuffle, but let's return the instance first.
-        return rawSharp;
 
       } catch (bmpError) {
         console.error('bmp-js fallback also failed:', bmpError);
