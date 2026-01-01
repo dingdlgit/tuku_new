@@ -60,9 +60,9 @@ setInterval(() => {
   });
 }, CLEANUP_INTERVAL);
 
-// Serve static files
-app.use('/uploads', express.static(UPLOAD_DIR));
-app.use('/processed', express.static(PROCESSED_DIR));
+// Serve static files (Updated to match the JSON response URLs)
+app.use('/api/uploads', express.static(UPLOAD_DIR));
+app.use('/api/processed', express.static(PROCESSED_DIR));
 
 // Routes
 app.post('/api/upload', upload.single('image'), async (req, res) => {
@@ -73,6 +73,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   try {
     const metadata = await sharp(req.file.path).metadata();
     
+    // Return URL matching the static middleware route above
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,

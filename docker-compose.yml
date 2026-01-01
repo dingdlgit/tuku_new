@@ -1,4 +1,4 @@
-version: "3.9"
+version: '3.8'
 
 services:
   frontend:
@@ -9,11 +9,13 @@ services:
       - "80:80"
     depends_on:
       - backend
+    restart: always
 
   backend:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    ports:
-      - "3000:3000"
-
+    volumes:
+      - ./server/uploads:/app/uploads
+      - ./server/processed:/app/processed
+    restart: always
