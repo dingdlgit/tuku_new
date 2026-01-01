@@ -4,6 +4,7 @@ import sharp from 'sharp';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
+import bmp from 'bmp-js'; // Import bmp-js for fallback decoding
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 
@@ -64,6 +65,51 @@ setInterval(() => {
 app.use('/api/uploads', express.static(UPLOAD_DIR));
 app.use('/api/processed', express.static(PROCESSED_DIR));
 
+/**
+ * Robust Image Loader Helper
+ * Tries to load image with Sharp directly.
+ * If that fails (common with BMPs), falls back to bmp-js decoding
+ * and creates a Sharp instance from raw pixel data.
+ */
+async function getSharpInstance(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  
+  // 1. Try standard Sharp loading first
+  try {
+    const instance = sharp(filePath, { 
+      failOnError: false, 
+      limitInputPixels: false 
+    });
+    // Force a metadata read to check if it's valid
+    await instance.metadata(); 
+    return instance;
+  } catch (error) {
+    // 2. If standard loading fails and it's a BMP, try manual decoding
+    if (ext === '.bmp') {
+      console.log(`Standard Sharp load failed for BMP, trying bmp-js fallback for: ${filePath}`);
+      try {
+        const buffer = fs.readFileSync(filePath);
+        const bitmap = bmp.decode(buffer);
+        
+        // Return a new Sharp instance based on raw pixel data
+        // bmp-js returns ABGR (usually), Sharp expects RGBA or similar. 
+        // We pass it as raw 4-channel data.
+        return sharp(bitmap.data, {
+          raw: {
+            width: bitmap.width,
+            height: bitmap.height,
+            channels: 4
+          }
+        });
+      } catch (bmpError) {
+        console.error('bmp-js fallback also failed:', bmpError);
+        throw error; // Throw original error if fallback fails
+      }
+    }
+    throw error;
+  }
+}
+
 // Routes
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) {
@@ -73,11 +119,9 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   console.log(`Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
 
   try {
-    // metadata() call needs failOnError: false for strict BMPs
-    const metadata = await sharp(req.file.path, { 
-      failOnError: false,
-      limitInputPixels: false 
-    }).metadata();
+    // Use helper to get a valid instance (handles BMP fallback)
+    const imagePipeline = await getSharpInstance(req.file.path);
+    const metadata = await imagePipeline.metadata();
     
     console.log('Metadata extracted:', metadata.width, 'x', metadata.height, 'Format:', metadata.format);
     
@@ -91,8 +135,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       height: metadata.height
     });
   } catch (error) {
-    console.error('Metadata extraction failed (non-fatal):', error.message);
-    // Return 0 dimensions if metadata fails, allowing the file to still be "uploaded"
+    console.error('Metadata extraction completely failed:', error.message);
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,
@@ -128,7 +171,6 @@ app.post('/api/process', async (req, res) => {
   }
 
   // FORCE PNG FOR BMP INPUT/OUTPUT
-  // Sharp cannot write BMP. If user wants BMP, we give them PNG.
   if (format === 'bmp') {
     format = 'png';
   }
@@ -139,15 +181,11 @@ app.post('/api/process', async (req, res) => {
   console.log(`Processing image ${id} -> ${format}`);
 
   try {
-    // Initialize Sharp with robust settings for BMP
-    // limitInputPixels: false is crucial for uncompressed large bitmaps
-    let pipeline = sharp(inputPath, { 
-      failOnError: false, 
-      limitInputPixels: false 
-    });
+    // Use helper to get valid instance (handles BMP fallback)
+    // We clone it because we might need to modify the pipeline
+    let pipeline = (await getSharpInstance(inputPath)).clone();
 
     // 1. Resize
-    // Only resize if valid dimensions are provided
     if ((options.width && options.width > 0) || (options.height && options.height > 0)) {
       pipeline = pipeline.resize({
         width: options.width || null,
@@ -168,7 +206,6 @@ app.post('/api/process', async (req, res) => {
 
     // 4. Watermark
     if (options.watermarkText) {
-       // Estimate width if not resized, default to 800 to avoid huge text on huge bitmaps
        const width = options.width || 800;
        const svgText = `
         <svg width="${width}" height="100">
@@ -190,7 +227,6 @@ app.post('/api/process', async (req, res) => {
     } else if (format === 'png') {
         pipeline = pipeline.png({ quality: options.quality });
     } else {
-        // Fallback for others
         pipeline = pipeline.toFormat(format);
     }
 
