@@ -73,14 +73,13 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   console.log(`Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
 
   try {
-    // FIX: limitInputPixels: false is required for some large uncompressed BMPs
-    // failOnError: false allows reading slightly malformed headers
+    // metadata() call needs failOnError: false for strict BMPs
     const metadata = await sharp(req.file.path, { 
-      failOnError: false, 
+      failOnError: false,
       limitInputPixels: false 
     }).metadata();
     
-    console.log('Metadata extracted:', metadata.width, 'x', metadata.height);
+    console.log('Metadata extracted:', metadata.width, 'x', metadata.height, 'Format:', metadata.format);
     
     res.json({
       id: path.parse(req.file.filename).name,
@@ -92,9 +91,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       height: metadata.height
     });
   } catch (error) {
-    console.error('Metadata error:', error);
-    // If we can't read metadata, we return 0 width/height.
-    // The frontend will treat this as "Unknown dimensions" but file exists.
+    console.error('Metadata extraction failed (non-fatal):', error.message);
+    // Return 0 dimensions if metadata fails, allowing the file to still be "uploaded"
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,
@@ -129,10 +127,9 @@ app.post('/api/process', async (req, res) => {
     format = path.extname(originalFile).slice(1).toLowerCase();
   }
 
-  // CRITICAL FIX: Sharp cannot write BMP files. 
-  // If user requests BMP or Original is BMP, we MUST switch to PNG to prevent crash.
+  // FORCE PNG FOR BMP INPUT/OUTPUT
+  // Sharp cannot write BMP. If user wants BMP, we give them PNG.
   if (format === 'bmp') {
-    console.log('BMP output requested. Converting to PNG as Sharp does not support BMP write.');
     format = 'png';
   }
 
@@ -142,14 +139,16 @@ app.post('/api/process', async (req, res) => {
   console.log(`Processing image ${id} -> ${format}`);
 
   try {
-    // FIX: Ensure BMP reading is robust during processing too
+    // Initialize Sharp with robust settings for BMP
+    // limitInputPixels: false is crucial for uncompressed large bitmaps
     let pipeline = sharp(inputPath, { 
       failOnError: false, 
       limitInputPixels: false 
     });
 
     // 1. Resize
-    if (options.width || options.height) {
+    // Only resize if valid dimensions are provided
+    if ((options.width && options.width > 0) || (options.height && options.height > 0)) {
       pipeline = pipeline.resize({
         width: options.width || null,
         height: options.height || null,
@@ -169,6 +168,7 @@ app.post('/api/process', async (req, res) => {
 
     // 4. Watermark
     if (options.watermarkText) {
+       // Estimate width if not resized, default to 800 to avoid huge text on huge bitmaps
        const width = options.width || 800;
        const svgText = `
         <svg width="${width}" height="100">
@@ -190,8 +190,7 @@ app.post('/api/process', async (req, res) => {
     } else if (format === 'png') {
         pipeline = pipeline.png({ quality: options.quality });
     } else {
-        // Fallback (mostly for GIF/TIFF)
-        // If it was BMP, it was already switched to PNG above
+        // Fallback for others
         pipeline = pipeline.toFormat(format);
     }
 
@@ -207,8 +206,8 @@ app.post('/api/process', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Processing error:', error);
-    res.status(500).json({ error: 'Processing failed: ' + error.message });
+    console.error('Processing error details:', error);
+    res.status(500).json({ error: `Processing failed: ${error.message}` });
   }
 });
 
