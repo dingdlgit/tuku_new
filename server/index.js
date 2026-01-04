@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import bmp from 'bmp-js'; // Import bmp-js for fallback decoding AND encoding
+import bmp from 'bmp-js'; // Import bmp-js for fallback decoding ONLY
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 
@@ -260,38 +260,16 @@ app.post('/api/process', async (req, res) => {
     }
 
     // 5. Output Generation
-    // Special handling: Sharp often cannot WRITE BMP natively. We must use bmp-js.
     if (format === 'bmp') {
-        // Extract raw RGBA data from pipeline
-        // .ensureAlpha() adds 255 (opaque) alpha channel if missing (e.g. from jpg input)
-        const { data: buffer, info } = await pipeline
-          .ensureAlpha()
-          .raw()
-          .toBuffer({ resolveWithObject: true });
-
-        // Convert RGBA (Sharp) to ABGR (bmp-js expectation)
-        // Sharp Buffer: [R, G, B, A, R, G, B, A ...]
-        // Target Buffer: [A, B, G, R, A, B, G, R ...]
-        // By putting Alpha at Index 0, we ensure the image is not interpreted as transparent.
-        const abgrBuffer = Buffer.alloc(buffer.length);
-        for (let i = 0; i < buffer.length; i += 4) {
-          abgrBuffer[i]     = buffer[i + 3]; // A (from Sharp 3) -> Index 0 (Alpha)
-          abgrBuffer[i + 1] = buffer[i + 2]; // B (from Sharp 2) -> Index 1 (Blue)
-          abgrBuffer[i + 2] = buffer[i + 1]; // G (from Sharp 1) -> Index 2 (Green)
-          abgrBuffer[i + 3] = buffer[i];     // R (from Sharp 0) -> Index 3 (Red)
-        }
-
-        // Encode to BMP
-        const rawData = {
-          data: abgrBuffer,
-          width: info.width,
-          height: info.height
-        };
-        const bmpData = bmp.encode(rawData);
-        
-        // Write manually
-        fs.writeFileSync(outputPath, bmpData.data);
-
+        // Use Sharp's native BMP output.
+        // Important: We .flatten() the image to a white background.
+        // This removes the Alpha channel (transparency) entirely, resulting in a standard 24-bit BMP.
+        // This solves issues where 32-bit BMPs appear black or transparent in some viewers.
+        pipeline = pipeline
+          .flatten({ background: '#ffffff' })
+          .toFormat('bmp');
+          
+        await pipeline.toFile(outputPath);
     } else {
         // Standard Sharp Output for other formats
         if (['jpeg', 'jpg'].includes(format)) {
