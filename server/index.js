@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import bmp from 'bmp-js'; // Import bmp-js for fallback decoding ONLY
+import bmp from 'bmp-js'; // Import bmp-js for fallback decoding AND encoding
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 
@@ -98,7 +98,8 @@ async function getSharpInstance(filePath) {
         }
     }
     
-    return instance;
+    // Force sRGB to ensure color consistency across formats
+    return instance.rotate().toColorspace('srgb');
   } catch (error) {
     // 2. Fallback: only strictly necessary for actual legacy/unsupported BMPs
     // If standard loading failed, and it might be a BMP (by extension or implication), try bmp-js
@@ -127,7 +128,7 @@ async function getSharpInstance(filePath) {
             height: bitmap.height,
             channels: 4
           }
-        });
+        }).toColorspace('srgb');
 
       } catch (bmpError) {
         console.error('bmp-js fallback also failed:', bmpError);
@@ -261,19 +262,40 @@ app.post('/api/process', async (req, res) => {
 
     // 5. Output Generation
     if (format === 'bmp') {
-        // Use Sharp's native BMP output.
-        // Important: We .flatten() the image to a white background.
-        // This removes the Alpha channel (transparency) entirely, resulting in a standard 24-bit BMP.
-        // This solves issues where 32-bit BMPs appear black or transparent in some viewers.
-        pipeline = pipeline
-          .flatten({ background: '#ffffff' })
-          .toFormat('bmp');
-          
-        await pipeline.toFile(outputPath);
+        // Fallback to bmp-js for encoding because Sharp support for BMP output is inconsistent in Docker
+        // Ensure we have RGBA data from Sharp
+        const { data: buffer, info } = await pipeline
+          .ensureAlpha() // Ensure 4 channels
+          .toColorspace('srgb')
+          .raw()
+          .toBuffer({ resolveWithObject: true });
+
+        // Convert RGBA (Sharp) to ABGR (bmp-js expectation)
+        const abgrBuffer = Buffer.alloc(buffer.length);
+        for (let i = 0; i < buffer.length; i += 4) {
+          // CRITICAL FIX: Force Alpha to 255 (Opaque).
+          // If the input image was interpreted as having 0 alpha (transparent), it looks black.
+          // By forcing 255, we guarantee the image is visible.
+          abgrBuffer[i]     = 255;             // A (Alpha) - Forced Opaque
+          abgrBuffer[i + 1] = buffer[i + 2];   // B (Blue)
+          abgrBuffer[i + 2] = buffer[i + 1];   // G (Green)
+          abgrBuffer[i + 3] = buffer[i];       // R (Red)
+        }
+
+        const rawData = {
+          data: abgrBuffer,
+          width: info.width,
+          height: info.height
+        };
+        const bmpData = bmp.encode(rawData);
+        fs.writeFileSync(outputPath, bmpData.data);
+
     } else {
-        // Standard Sharp Output for other formats
+        // For other formats (JPG, PNG), we also want to be careful about transparency causing black output
         if (['jpeg', 'jpg'].includes(format)) {
-            pipeline = pipeline.jpeg({ quality: options.quality });
+             // Flatten transparency to white before saving as JPEG
+             pipeline = pipeline.flatten({ background: '#ffffff' });
+             pipeline = pipeline.jpeg({ quality: options.quality });
         } else if (format === 'png') {
             const pngOptions = {};
             if (is16Bit) {
@@ -286,7 +308,6 @@ app.post('/api/process', async (req, res) => {
         } else if (format === 'avif') {
             pipeline = pipeline.avif({ quality: options.quality });
         } else {
-            // Safe fallback for standard formats
             pipeline = pipeline.toFormat(format);
         }
         
