@@ -238,25 +238,38 @@ function App() {
                       backgroundPosition: '0 0, 0 10px, 10px -10px, -10px 0px'
                     }}></div>
                     
-                    <div className="relative z-10 max-w-full max-h-full p-4">
+                    <div className="relative z-10 max-w-full max-h-full p-4 flex items-center justify-center w-full h-full">
                       {result ? (
                          <div className="flex flex-col items-center">
-                            <img src={result.url} alt="Processed" className="max-h-[500px] object-contain shadow-xl rounded-lg border border-slate-300" />
+                            <img 
+                              src={result.url} 
+                              alt="Processed" 
+                              decoding="async"
+                              className="max-h-[500px] object-contain shadow-xl rounded-lg border border-slate-300" 
+                            />
                             <div className="mt-4 bg-green-50 text-green-700 px-4 py-2 rounded-full text-sm font-medium border border-green-200 flex items-center">
                                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                {t.processedSuccess}
                             </div>
                          </div>
                       ) : (
-                        <div className="relative group">
-                           <img src={currentFile.url} alt="Original" className="max-h-[500px] object-contain shadow-xl rounded-lg border border-slate-300 transition-transform duration-300" style={{
-                             transform: `rotate(${options.rotate}deg) scaleX(${options.flipX ? -1 : 1}) scaleY(${options.flipY ? -1 : 1})`,
-                             filter: `
-                               grayscale(${options.grayscale ? 1 : 0}) 
-                               blur(${options.blur}px)
-                               ${options.sharpen ? 'contrast(1.2)' : ''}
-                             `
-                           }} />
+                        <div className="relative group flex items-center justify-center w-full h-full">
+                           {/* Added transform-gpu, will-change-transform, and decoding=async to improve performance and prevent lag */}
+                           <img 
+                             src={currentFile.url} 
+                             alt="Original" 
+                             decoding="async"
+                             loading="lazy"
+                             className="max-h-[500px] object-contain shadow-xl rounded-lg border border-slate-300 transition-transform duration-300 transform-gpu will-change-transform" 
+                             style={{
+                               transform: `rotate(${options.rotate}deg) scaleX(${options.flipX ? -1 : 1}) scaleY(${options.flipY ? -1 : 1})`,
+                               filter: `
+                                 grayscale(${options.grayscale ? 1 : 0}) 
+                                 blur(${options.blur}px)
+                                 ${options.sharpen ? 'contrast(1.2)' : ''}
+                               `
+                             }} 
+                           />
                            {!result && <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">{t.preview}</div>}
                         </div>
                       )}

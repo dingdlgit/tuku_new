@@ -76,33 +76,26 @@ async function getSharpInstance(filePath) {
   
   try {
     // 1. Try standard Sharp loading first.
-    // Sharp uses libvips which sniffs the file content (Magic Numbers).
-    // This handles cases where a file is named .bmp but contains PNG or JPEG data.
     const instance = sharp(filePath, { 
       failOnError: false, 
       limitInputPixels: false 
     });
     
-    // Check Metadata to ensure file is readable and determine true format
+    // Check Metadata to ensure file is readable
     const metadata = await instance.metadata(); 
 
-    // Specific check for files that are TRULY BMP (per metadata) but might be unsupported by libvips.
-    // If metadata.format is 'png', 'jpeg', etc., even if extension is .bmp, we are fine.
-    // If metadata.format is 'bmp', we try a small render to see if libvips crashes on the pixel data.
+    // Specific check for files that are TRULY BMP but might be unsupported by libvips.
     if (metadata.format === 'bmp') {
         try {
            await instance.clone().resize(8, 8).toBuffer();
         } catch (e) {
-           // If render fails, throw to trigger fallback
            throw new Error('Libvips failed to render BMP pixel data');
         }
     }
     
-    // Force sRGB to ensure color consistency across formats
     return instance.rotate().toColorspace('srgb');
   } catch (error) {
     // 2. Fallback: only strictly necessary for actual legacy/unsupported BMPs
-    // If standard loading failed, and it might be a BMP (by extension or implication), try bmp-js
     if (ext === '.bmp') {
       console.log(`Standard Sharp load failed for BMP-like file (${error.message}), switching to bmp-js fallback for: ${filePath}`);
       try {
@@ -119,7 +112,12 @@ async function getSharpInstance(filePath) {
           rgba[i]     = abgr[i + 3]; // R
           rgba[i + 1] = abgr[i + 2]; // G
           rgba[i + 2] = abgr[i + 1]; // B
-          rgba[i + 3] = abgr[i];     // A
+          
+          // CRITICAL FIX FOR INPUT:
+          // Instead of copying A (abgr[i]), we FORCE opacity (255).
+          // Many "24-bit" BMPs are saved as 32-bit XRGB where X is 0.
+          // If we copy '0', the image becomes transparent (invisible).
+          rgba[i + 3] = 255; 
         }
 
         return sharp(rgba, {
@@ -132,7 +130,7 @@ async function getSharpInstance(filePath) {
 
       } catch (bmpError) {
         console.error('bmp-js fallback also failed:', bmpError);
-        throw error; // Throw original error
+        throw error; 
       }
     }
     throw error;
@@ -148,11 +146,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   console.log(`Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
 
   try {
-    // Use helper to get a valid instance (handles BMP/Misnamed files)
     const imagePipeline = await getSharpInstance(req.file.path);
     const metadata = await imagePipeline.metadata();
-    
-    console.log('Metadata extracted:', metadata.width, 'x', metadata.height, 'Format:', metadata.format, 'Depth:', metadata.depth);
     
     res.json({
       id: path.parse(req.file.filename).name,
@@ -167,8 +162,6 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     });
   } catch (error) {
     console.error('Metadata extraction completely failed:', error.message);
-    // Even if we can't extract metadata (e.g. raw uyvy without header), we return success 
-    // to allow the user to try processing it, though process step might fail if format is unrecognized.
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,
@@ -197,12 +190,10 @@ app.post('/api/process', async (req, res) => {
 
   const inputPath = path.join(UPLOAD_DIR, originalFile);
   
-  // Determine output format
   let format = options.format;
   if (format === 'original') {
     format = path.extname(originalFile).slice(1).toLowerCase();
   }
-  // Standardize format string for sharp/logic
   if (format === 'jpg') format = 'jpeg';
 
   const outputFilename = `tuku_${id}_${Date.now()}.${format}`;
@@ -211,31 +202,26 @@ app.post('/api/process', async (req, res) => {
   console.log(`Processing image ${id} -> ${format}`);
 
   try {
-    // Use helper to get valid instance
     const instance = await getSharpInstance(inputPath);
-    
-    // Check input depth to preserve it where possible
     const metadata = await instance.metadata();
     const is16Bit = metadata.depth === 'ushort' || metadata.depth === 'short';
 
     let pipeline = instance.clone();
     
-    // CRITICAL FIX: Remove Alpha channel immediately.
-    // Why? If the input BMP/image has a 4th channel (Alpha) that is filled with 0 (padding),
-    // Sharp's resize operation uses "premultiplied alpha".
-    // Math: R_new = R_old * (Alpha / 255). If Alpha is 0, R_new becomes 0.
-    // This turns the entire image black during resize.
-    // Removing alpha here forces Sharp to treat it as opaque RGB, preserving the color data.
-    // We will add a fresh, opaque alpha channel back later if needed (e.g., for BMP output).
-    pipeline = pipeline.removeAlpha();
+    // SAFETY FIX: 
+    // If the input is BMP, we force remove alpha channel immediately.
+    // Even if we fixed the bmp-js loader, libvips might have loaded a 32-bit BMP (XRGB) as RGBA(0).
+    // Removing alpha forces it to ignore the transparency channel and keep pixel values.
+    // We DO NOT do this for PNG/WebP, as users might want to preserve transparency there.
+    if (metadata.format === 'bmp' || path.extname(originalFile).toLowerCase() === '.bmp') {
+        pipeline = pipeline.removeAlpha();
+    }
 
-    // Track current dimensions manually to support Watermark generation later
     let currentWidth = metadata.width;
     let currentHeight = metadata.height;
 
     // 1. Resize
     if ((options.width && options.width > 0) || (options.height && options.height > 0)) {
-      // Calculate new dimensions for tracking
       if (options.width && options.height) {
          currentWidth = options.width;
          currentHeight = options.height;
@@ -261,7 +247,6 @@ app.post('/api/process', async (req, res) => {
     // 2. Rotate & Flip
     if (options.rotate) {
         pipeline = pipeline.rotate(options.rotate);
-        // If rotating 90 or 270 degrees, swap dimensions
         if (Math.abs(options.rotate) === 90 || Math.abs(options.rotate) === 270) {
             [currentWidth, currentHeight] = [currentHeight, currentWidth];
         }
@@ -276,12 +261,8 @@ app.post('/api/process', async (req, res) => {
 
     // 4. Watermark
     if (options.watermarkText) {
-       // FIX: Use currentWidth/Height instead of default 800/100
-       // This ensures the SVG is exactly the size of the image, avoiding "Image to composite must have same dimensions or smaller"
        const svgWidth = currentWidth;
        const svgHeight = currentHeight;
-       
-       // Calculate dynamic font size (e.g., 5% of width, min 20px)
        const fontSize = Math.max(Math.floor(svgWidth * 0.05), 20);
 
        const svgText = `
@@ -305,22 +286,18 @@ app.post('/api/process', async (req, res) => {
 
     // 5. Output Generation
     if (format === 'bmp') {
-        // Fallback to bmp-js for encoding because Sharp support for BMP output is inconsistent in Docker
-        // Ensure we have RGBA data from Sharp
         const { data: buffer, info } = await pipeline
-          .ensureAlpha() // Add a fresh, 100% Opaque Alpha channel (255) back for the buffer
+          .ensureAlpha() // Add opaque alpha back if it was removed
           .toColorspace('srgb')
           .raw()
           .toBuffer({ resolveWithObject: true });
 
-        // Convert RGBA (Sharp) to ABGR (bmp-js expectation)
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
-          // Because we did .ensureAlpha(), buffer[i+3] is now 255 (Opaque)
-          abgrBuffer[i]     = buffer[i + 3];   // A (Alpha)
-          abgrBuffer[i + 1] = buffer[i + 2];   // B (Blue)
-          abgrBuffer[i + 2] = buffer[i + 1];   // G (Green)
-          abgrBuffer[i + 3] = buffer[i];       // R (Red)
+          abgrBuffer[i]     = 255;             // Force Opaque Output
+          abgrBuffer[i + 1] = buffer[i + 2];   // B
+          abgrBuffer[i + 2] = buffer[i + 1];   // G
+          abgrBuffer[i + 3] = buffer[i];       // R
         }
 
         const rawData = {
@@ -332,9 +309,7 @@ app.post('/api/process', async (req, res) => {
         fs.writeFileSync(outputPath, bmpData.data);
 
     } else {
-        // For other formats
         if (['jpeg', 'jpg'].includes(format)) {
-             // Safe to flatten again, though removeAlpha already handled it essentially
              pipeline = pipeline.flatten({ background: '#ffffff' });
              pipeline = pipeline.jpeg({ quality: options.quality });
         } else if (format === 'png') {
