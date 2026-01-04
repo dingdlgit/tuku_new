@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
@@ -117,6 +118,13 @@ function App() {
     setOptions(defaultOptions);
   };
 
+  const getBitDepthLabel = (depth?: string) => {
+    if (depth === 'ushort' || depth === 'short') return '16-bit';
+    if (depth === 'float') return '32-bit Float';
+    if (depth === 'uchar') return '8-bit';
+    return depth || '8-bit';
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -203,7 +211,11 @@ function App() {
                        <div className="flex items-center gap-4">
                           <div className="text-sm">
                              <p className="text-slate-500">Original Size</p>
-                             <p className="font-semibold text-slate-800">{formatSize(currentFile.size)}</p>
+                             <p className="font-semibold text-slate-800">
+                               {formatSize(currentFile.size)} 
+                               <span className="text-slate-300 mx-2">|</span> 
+                               {getBitDepthLabel(currentFile.depth)}
+                             </p>
                           </div>
                           <div className="w-px h-8 bg-slate-200"></div>
                           <div className="text-sm">

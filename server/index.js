@@ -1,3 +1,4 @@
+
 import express from 'express';
 import multer from 'multer';
 import sharp from 'sharp';
@@ -145,7 +146,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     const imagePipeline = await getSharpInstance(req.file.path);
     const metadata = await imagePipeline.metadata();
     
-    console.log('Metadata extracted:', metadata.width, 'x', metadata.height, 'Format:', metadata.format);
+    console.log('Metadata extracted:', metadata.width, 'x', metadata.height, 'Format:', metadata.format, 'Depth:', metadata.depth);
     
     res.json({
       id: path.parse(req.file.filename).name,
@@ -154,7 +155,9 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       originalName: req.file.originalname,
       size: req.file.size,
       width: metadata.width,
-      height: metadata.height
+      height: metadata.height,
+      format: metadata.format,
+      depth: metadata.depth
     });
   } catch (error) {
     console.error('Metadata extraction completely failed:', error.message);
@@ -204,9 +207,13 @@ app.post('/api/process', async (req, res) => {
 
   try {
     // Use helper to get valid instance (handles BMP fallback)
-    // We clone it because we might need to modify the pipeline
-    // Note: If getSharpInstance returned a raw buffer instance, cloning works fine.
-    let pipeline = (await getSharpInstance(inputPath)).clone();
+    const instance = await getSharpInstance(inputPath);
+    
+    // Check input depth to preserve it
+    const metadata = await instance.metadata();
+    const is16Bit = metadata.depth === 'ushort' || metadata.depth === 'short';
+
+    let pipeline = instance.clone();
 
     // 1. Resize
     if ((options.width && options.width > 0) || (options.height && options.height > 0)) {
@@ -244,11 +251,28 @@ app.post('/api/process', async (req, res) => {
     }
 
     // 5. Format Output
-    if (['jpeg', 'webp', 'avif'].includes(format)) {
-        // @ts-ignore
-        pipeline = pipeline.toFormat(format, { quality: options.quality });
+    if (['jpeg', 'jpg'].includes(format)) {
+        // JPEG is always 8-bit
+        pipeline = pipeline.jpeg({ quality: options.quality });
     } else if (format === 'png') {
-        pipeline = pipeline.png({ quality: options.quality });
+        // PNG can be 8 or 16 bit. 
+        // If input was 16-bit, we preserve it. 
+        // IMPORTANT: We do NOT pass 'quality' here because it triggers lossy quantization (8-bit palette),
+        // effectively destroying bit depth. We want true lossless PNG.
+        const pngOptions = {};
+        if (is16Bit) {
+            console.log('Preserving 16-bit depth for PNG output');
+            pngOptions.bitdepth = 16;
+            pngOptions.palette = false; // Ensure truecolor
+        }
+        // If we want compression level control (lossless):
+        // pngOptions.compressionLevel = 9; 
+        pipeline = pipeline.png(pngOptions);
+
+    } else if (format === 'webp') {
+        pipeline = pipeline.webp({ quality: options.quality });
+    } else if (format === 'avif') {
+        pipeline = pipeline.avif({ quality: options.quality });
     } else {
         pipeline = pipeline.toFormat(format);
     }
@@ -266,7 +290,6 @@ app.post('/api/process', async (req, res) => {
 
   } catch (error) {
     console.error('Processing error details:', error);
-    // Explicitly mention if it's a format issue
     const msg = error.message.includes('unsupported image format') 
       ? 'Input format corrupted or unsupported. Try converting to PNG/JPG first.' 
       : error.message;

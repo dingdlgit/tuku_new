@@ -1,3 +1,4 @@
+
 export enum ImageFormat {
   ORIGINAL = 'original',
   JPEG = 'jpeg',
@@ -31,6 +32,8 @@ export interface UploadResponse {
   size: number;
   width?: number;
   height?: number;
+  depth?: string;
+  format?: string;
 }
 
 export interface ProcessResponse {
