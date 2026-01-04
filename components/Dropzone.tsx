@@ -16,15 +16,13 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
     en: {
       uploading: "Uploading...",
       mainText: "Click to Upload or Drag & Drop",
-      subText: "JPG, PNG, WEBP, BMP, UYVY up to 20MB",
-      formatError: "Format not supported.",
+      subText: "Supports standard images & Raw data (UYVY, NV21, etc.). Max 20MB.",
       sizeError: "File too large. Max size is 20MB."
     },
     zh: {
       uploading: "正在上传...",
-      mainText: "点击上传或拖拽图片到此处",
-      subText: "支持 JPG, PNG, WEBP, BMP, UYVY (最大 20MB)",
-      formatError: "不支持该格式。",
+      mainText: "点击上传或拖拽任意文件到此处",
+      subText: "支持常见图片及任意 Raw 数据 (UYVY, NV21 等)，最大 20MB",
       sizeError: "文件过大。最大允许 20MB。"
     }
   }[lang];
@@ -54,23 +52,15 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
   };
 
   const validateAndUpload = (file: File) => {
-    // Relaxed validation: Check extensions for specific formats that might have generic/missing MIME types
-    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.heic', '.uyvy'];
-    const validMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/x-ms-bmp', 'image/gif', 'image/heic'];
+    // REMOVED: Extension and MIME type validation.
+    // We now accept ANY file type, letting the backend or user configuration handle it.
     
-    const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
-    
-    // Allow if MIME type is valid OR extension is valid
-    const isValid = validMimes.includes(file.type) || validExtensions.includes(fileExt);
-
-    if (!isValid) {
-      alert(t.formatError);
-      return;
-    }
     if (file.size > 20 * 1024 * 1024) {
       alert(t.sizeError);
       return;
     }
+    
+    // Pass file directly to parent
     onFileSelect(file);
   };
 
@@ -93,7 +83,8 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
         ref={fileInputRef} 
         onChange={handleChange} 
         className="hidden" 
-        accept="image/*,.uyvy,.bmp"
+        // Accept all files to prevent OS file picker from filtering
+        accept="*"
       />
       
       {isUploading ? (
