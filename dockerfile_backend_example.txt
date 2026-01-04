@@ -1,3 +1,4 @@
+
 # Use Debian-based image instead of Alpine for better native library (libvips/sharp) compatibility
 # This fixes "unsupported image format" errors for specific BMP/TIFF files
 FROM node:18-bullseye
@@ -7,7 +8,13 @@ WORKDIR /app
 # Copy package.json from the server directory
 COPY server/package.json ./
 
-# Install dependencies
+# Install Chinese fonts and dependencies
+RUN apt-get update && apt-get install -y \
+    fonts-noto-cjk \
+    fonts-wqy-zenhei \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install npm dependencies
 RUN npm install
 
 # Copy the rest of the server code

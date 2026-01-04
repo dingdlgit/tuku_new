@@ -237,12 +237,18 @@ app.post('/api/process', async (req, res) => {
     // 4. Watermark
     if (options.watermarkText) {
        const width = options.width || 800;
+       // Updated font stack to include CJK fonts
        const svgText = `
         <svg width="${width}" height="100">
           <style>
-            .title { fill: rgba(255, 255, 255, 0.5); font-size: 48px; font-weight: bold; font-family: sans-serif; }
+            .title { 
+              fill: rgba(255, 255, 255, 0.5); 
+              font-size: 48px; 
+              font-weight: bold; 
+              font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei', sans-serif; 
+            }
           </style>
-          <text x="50%" y="50%" text-anchor="middle" class="title">${options.watermarkText}</text>
+          <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" class="title">${options.watermarkText}</text>
         </svg>`;
        pipeline = pipeline.composite([{
           input: Buffer.from(svgText),
