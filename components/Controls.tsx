@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ImageFormat, ProcessOptions, Language } from '../types';
+import { ImageFormat, ProcessOptions, Language, RawPixelFormat } from '../types';
 
 interface ControlsProps {
   options: ProcessOptions;
@@ -9,6 +9,7 @@ interface ControlsProps {
   isProcessing: boolean;
   originalDimensions?: { width: number; height: number };
   lang: Language;
+  inputFormat?: string; // Passed from parent to detect if raw inputs are needed
 }
 
 export const Controls: React.FC<ControlsProps> = ({ 
@@ -17,13 +18,17 @@ export const Controls: React.FC<ControlsProps> = ({
   onProcess, 
   isProcessing,
   originalDimensions,
-  lang
+  lang,
+  inputFormat
 }) => {
   
   const t = {
     en: {
       settings: "Settings",
-      format: "Format",
+      sourceSettings: "Raw Source Settings",
+      sourceDesc: "Select format & dimensions to parse raw data.",
+      pixelFormat: "Pixel Format",
+      format: "Output Format",
       quality: "Quality",
       resize: "Resize",
       maintainAspect: "Maintain Aspect Ratio",
@@ -39,6 +44,9 @@ export const Controls: React.FC<ControlsProps> = ({
     },
     zh: {
       settings: "设置",
+      sourceSettings: "源图像设置 (Raw)",
+      sourceDesc: "选择像素排列格式并指定尺寸以解析数据。",
+      pixelFormat: "像素排列格式",
       format: "输出格式",
       quality: "画质质量",
       resize: "调整尺寸",
@@ -59,6 +67,14 @@ export const Controls: React.FC<ControlsProps> = ({
     setOptions(prev => ({ ...prev, [key]: value }));
   };
 
+  // Logic: Show Raw settings if filename ends with common raw extensions OR if backend failed to detect width (width=0)
+  const isRaw = (inputFormat && (
+    inputFormat.toLowerCase().endsWith('uyvy') || 
+    inputFormat.toLowerCase().endsWith('yuv') ||
+    inputFormat.toLowerCase().endsWith('nv21') ||
+    inputFormat.toLowerCase().endsWith('rgb')
+  )) || (originalDimensions && originalDimensions.width === 0);
+
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
       <div className="p-4 border-b border-slate-100 bg-slate-50">
@@ -71,6 +87,58 @@ export const Controls: React.FC<ControlsProps> = ({
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
+        
+        {/* RAW Format Specific Settings - Shown ONLY for Raw files */}
+        {isRaw && (
+          <section className="bg-amber-50 p-3 rounded-lg border border-amber-200 space-y-3">
+             <div>
+               <label className="block text-sm font-bold text-amber-800 mb-1">{t.sourceSettings}</label>
+               <p className="text-xs text-amber-700">{t.sourceDesc}</p>
+             </div>
+             
+             {/* Pixel Format Dropdown */}
+             <div>
+               <label className="block text-xs font-semibold text-amber-800 mb-1">{t.pixelFormat}</label>
+               <select
+                 value={options.rawPixelFormat}
+                 onChange={(e) => updateOption('rawPixelFormat', e.target.value as RawPixelFormat)}
+                 className="w-full px-3 py-2 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white"
+               >
+                 <option value={RawPixelFormat.UYVY}>UYVY (YUV 4:2:2)</option>
+                 <option value={RawPixelFormat.NV21}>NV21 (YUV 4:2:0 SP)</option>
+                 <option value={RawPixelFormat.YUY2}>YUY2 (YUV 4:2:2)</option>
+                 <option value={RawPixelFormat.RGBA}>RGBA (32-bit)</option>
+                 <option value={RawPixelFormat.RGB}>RGB (24-bit)</option>
+               </select>
+             </div>
+
+             {/* Dimensions Inputs */}
+             <div className="flex gap-2 items-center">
+                <div className="relative w-full">
+                  <input
+                    type="number"
+                    placeholder="W"
+                    value={options.rawWidth || ''}
+                    onChange={(e) => updateOption('rawWidth', e.target.value ? Number(e.target.value) : undefined)}
+                    className="w-full pl-3 pr-8 py-2 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-slate-400">px</span>
+                </div>
+                <span className="text-slate-400">×</span>
+                <div className="relative w-full">
+                  <input
+                    type="number"
+                    placeholder="H"
+                    value={options.rawHeight || ''}
+                    onChange={(e) => updateOption('rawHeight', e.target.value ? Number(e.target.value) : undefined)}
+                    className="w-full pl-3 pr-8 py-2 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white"
+                  />
+                  <span className="absolute right-3 top-2 text-xs text-slate-400">px</span>
+                </div>
+              </div>
+          </section>
+        )}
+
         {/* Format & Quality */}
         <section>
           <label className="block text-sm font-medium text-slate-700 mb-2">{t.format}</label>

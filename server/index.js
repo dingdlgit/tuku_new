@@ -66,72 +66,221 @@ setInterval(() => {
 app.use('/api/uploads', express.static(UPLOAD_DIR));
 app.use('/api/processed', express.static(PROCESSED_DIR));
 
+// --- PIXEL CONVERSION HELPERS ---
+
+function convertYuvPixelToRgb(y, u, v, outBuffer, offset) {
+  // Standard BT.601 conversion
+  const c = y - 16;
+  const d = u - 128;
+  const e = v - 128;
+
+  const r = (298 * c + 409 * e + 128) >> 8;
+  const g = (298 * c - 100 * d - 208 * e + 128) >> 8;
+  const b = (298 * c + 516 * d + 128) >> 8;
+
+  outBuffer[offset] = Math.max(0, Math.min(255, r));     // R
+  outBuffer[offset + 1] = Math.max(0, Math.min(255, g)); // G
+  outBuffer[offset + 2] = Math.max(0, Math.min(255, b)); // B
+  outBuffer[offset + 3] = 255; // Alpha
+}
+
+/**
+ * UYVY to RGBA (YUV 4:2:2 Packed)
+ * Sequence: U0 Y0 V0 Y1
+ */
+function uyvyToRgba(buffer, width, height) {
+  const numPixels = width * height;
+  const rgba = Buffer.alloc(numPixels * 4);
+  let ptr = 0;
+  let outPtr = 0;
+
+  for (let i = 0; i < numPixels / 2; i++) {
+    if (ptr + 3 >= buffer.length) break;
+    const u = buffer[ptr];
+    const y0 = buffer[ptr + 1];
+    const v = buffer[ptr + 2];
+    const y1 = buffer[ptr + 3];
+    ptr += 4;
+    convertYuvPixelToRgb(y0, u, v, rgba, outPtr);
+    outPtr += 4;
+    convertYuvPixelToRgb(y1, u, v, rgba, outPtr);
+    outPtr += 4;
+  }
+  return rgba;
+}
+
+/**
+ * YUY2 to RGBA (YUV 4:2:2 Packed)
+ * Sequence: Y0 U0 Y1 V0
+ */
+function yuy2ToRgba(buffer, width, height) {
+  const numPixels = width * height;
+  const rgba = Buffer.alloc(numPixels * 4);
+  let ptr = 0;
+  let outPtr = 0;
+
+  for (let i = 0; i < numPixels / 2; i++) {
+    if (ptr + 3 >= buffer.length) break;
+    const y0 = buffer[ptr];
+    const u = buffer[ptr + 1];
+    const y1 = buffer[ptr + 2];
+    const v = buffer[ptr + 3];
+    ptr += 4;
+    convertYuvPixelToRgb(y0, u, v, rgba, outPtr);
+    outPtr += 4;
+    convertYuvPixelToRgb(y1, u, v, rgba, outPtr);
+    outPtr += 4;
+  }
+  return rgba;
+}
+
+/**
+ * NV21 to RGBA (YUV 4:2:0 Semi-Planar)
+ * Planar Y, followed by interleaved VU
+ */
+function nv21ToRgba(buffer, width, height) {
+  const numPixels = width * height;
+  const rgba = Buffer.alloc(numPixels * 4);
+  
+  const ySize = width * height;
+  const uvOffset = ySize;
+  
+  // Basic validation
+  if (buffer.length < width * height * 1.5) {
+      console.warn("Buffer too small for NV21 at " + width + "x" + height);
+  }
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+       const yIndex = y * width + x;
+       const yVal = buffer[yIndex];
+       
+       // UV plane is subsampled 2x2. 
+       // For NV21, V is at even byte, U is at odd byte
+       const uvIndex = uvOffset + Math.floor(y/2) * width + Math.floor(x/2) * 2;
+       
+       // NV21: V, U.  NV12: U, V.
+       // Assuming NV21 as requested:
+       let vVal = 128, uVal = 128;
+       if (uvIndex + 1 < buffer.length) {
+         vVal = buffer[uvIndex];
+         uVal = buffer[uvIndex + 1];
+       }
+
+       const outPtr = yIndex * 4;
+       convertYuvPixelToRgb(yVal, uVal, vVal, rgba, outPtr);
+    }
+  }
+  return rgba;
+}
+
 /**
  * Robust Image Loader Helper
- * Tries to load image with Sharp directly.
- * If that fails (common with legacy BMPs), falls back to bmp-js decoding.
+ * rawOptions: { width?: number, height?: number, pixelFormat?: string }
  */
-async function getSharpInstance(filePath) {
+async function getSharpInstance(filePath, rawOptions = {}) {
   const ext = path.extname(filePath).toLowerCase();
   
-  try {
-    // 1. Try standard Sharp loading first.
-    const instance = sharp(filePath, { 
-      failOnError: false, 
-      limitInputPixels: false 
-    });
-    
-    // Check Metadata to ensure file is readable
-    const metadata = await instance.metadata(); 
+  // Determine if we should treat this as RAW
+  // 1. Explicit request via rawOptions (from UI)
+  // 2. Implicit detection via extension (.uyvy, .yuv, .nv21)
+  const explicitRaw = !!(rawOptions.width && rawOptions.height && rawOptions.pixelFormat);
+  const implicitRaw = ['.uyvy', '.yuv', '.nv21', '.rgb'].includes(ext);
 
-    // Specific check for files that are TRULY BMP but might be unsupported by libvips.
-    if (metadata.format === 'bmp') {
-        try {
-           await instance.clone().resize(8, 8).toBuffer();
-        } catch (e) {
-           throw new Error('Libvips failed to render BMP pixel data');
+  if (explicitRaw || implicitRaw) {
+    const stats = fs.statSync(filePath);
+    const size = stats.size;
+    let width, height;
+    
+    // Default format if implicit
+    let pixelFormat = rawOptions.pixelFormat || 'uyvy'; 
+
+    // Resolution Logic
+    if (rawOptions.width && rawOptions.height) {
+        width = rawOptions.width;
+        height = rawOptions.height;
+        console.log(`Using manual raw config: ${width}x${height} ${pixelFormat}`);
+    } else {
+        // Fallback guessing
+        const KNOWN_RESOLUTIONS = {
+            5898240: [1920, 1536], 
+            4147200: [1920, 1080], 
+            1843200: [1280, 720], 
+            614400:  [640, 480],   
+        };
+        const dims = KNOWN_RESOLUTIONS[size];
+        if (dims) {
+            [width, height] = dims;
+            console.log(`Guessed resolution from size ${size}: ${width}x${height}`);
         }
     }
-    
+
+    if (width && height) {
+      const buffer = fs.readFileSync(filePath);
+      let rgbaBuffer;
+
+      // Switch based on pixel format
+      switch (pixelFormat.toLowerCase()) {
+          case 'uyvy':
+              rgbaBuffer = uyvyToRgba(buffer, width, height);
+              break;
+          case 'yuy2':
+              rgbaBuffer = yuy2ToRgba(buffer, width, height);
+              break;
+          case 'nv21':
+              rgbaBuffer = nv21ToRgba(buffer, width, height);
+              break;
+          case 'rgba':
+              // Sharp can handle raw RGBA directly if we just pass the buffer
+              // But to keep pipeline consistent, we return it as is or verify size
+              rgbaBuffer = buffer; 
+              break;
+          case 'rgb':
+              // If RGB 24bit, we might need to let Sharp handle it via raw config options
+              // Sharp raw input: { width, height, channels: 3 }
+              return sharp(buffer, {
+                  raw: { width, height, channels: 3 }
+              }).toColorspace('srgb');
+          default:
+              // Default to UYVY if unknown
+              console.warn(`Unknown pixel format ${pixelFormat}, defaulting to UYVY`);
+              rgbaBuffer = uyvyToRgba(buffer, width, height);
+              break;
+      }
+      
+      return sharp(rgbaBuffer, {
+        raw: {
+          width: width,
+          height: height,
+          channels: 4
+        }
+      }).toColorspace('srgb');
+    } else {
+      console.warn(`Raw file uploaded with unknown resolution: ${filePath}`);
+    }
+  }
+
+  // --- Standard Formats & Fallbacks ---
+  try {
+    const instance = sharp(filePath, { failOnError: false, limitInputPixels: false });
+    const metadata = await instance.metadata(); 
+    if (metadata.format === 'bmp') {
+        try { await instance.clone().resize(8, 8).toBuffer(); } 
+        catch (e) { throw new Error('Libvips failed to render BMP'); }
+    }
     return instance.rotate().toColorspace('srgb');
   } catch (error) {
-    // 2. Fallback: only strictly necessary for actual legacy/unsupported BMPs
     if (ext === '.bmp') {
-      console.log(`Standard Sharp load failed for BMP-like file (${error.message}), switching to bmp-js fallback for: ${filePath}`);
       try {
         const buffer = fs.readFileSync(filePath);
         const bitmap = bmp.decode(buffer);
-        
-        // bmp-js returns data in ABGR format [A, B, G, R]
-        // Sharp raw input expects RGBA format [R, G, B, A]
         const abgr = bitmap.data;
-        const len = abgr.length;
-        const rgba = Buffer.alloc(len);
-
-        for (let i = 0; i < len; i += 4) {
-          rgba[i]     = abgr[i + 3]; // R
-          rgba[i + 1] = abgr[i + 2]; // G
-          rgba[i + 2] = abgr[i + 1]; // B
-          
-          // CRITICAL FIX FOR INPUT:
-          // Instead of copying A (abgr[i]), we FORCE opacity (255).
-          // Many "24-bit" BMPs are saved as 32-bit XRGB where X is 0.
-          // If we copy '0', the image becomes transparent (invisible).
-          rgba[i + 3] = 255; 
+        const rgba = Buffer.alloc(abgr.length);
+        for (let i = 0; i < abgr.length; i += 4) {
+          rgba[i] = abgr[i + 3]; rgba[i + 1] = abgr[i + 2]; rgba[i + 2] = abgr[i + 1]; rgba[i + 3] = 255;
         }
-
-        return sharp(rgba, {
-          raw: {
-            width: bitmap.width,
-            height: bitmap.height,
-            channels: 4
-          }
-        }).toColorspace('srgb');
-
-      } catch (bmpError) {
-        console.error('bmp-js fallback also failed:', bmpError);
-        throw error; 
-      }
+        return sharp(rgba, { raw: { width: bitmap.width, height: bitmap.height, channels: 4 } }).toColorspace('srgb');
+      } catch (bmpError) { throw error; }
     }
     throw error;
   }
@@ -161,7 +310,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       depth: metadata.depth
     });
   } catch (error) {
-    console.error('Metadata extraction completely failed:', error.message);
+    console.error('Metadata extraction failed:', error.message);
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,
@@ -193,8 +342,10 @@ app.post('/api/process', async (req, res) => {
   let format = options.format;
   if (format === 'original') {
     format = path.extname(originalFile).slice(1).toLowerCase();
+    if (format === 'uyvy' || format === 'yuv' || format === 'nv21' || format === 'rgb') format = 'png';
   }
   if (format === 'jpg') format = 'jpeg';
+  if (['uyvy', 'yuv', 'nv21', 'rgb'].includes(format)) format = 'png';
 
   const outputFilename = `tuku_${id}_${Date.now()}.${format}`;
   const outputPath = path.join(PROCESSED_DIR, outputFilename);
@@ -202,17 +353,18 @@ app.post('/api/process', async (req, res) => {
   console.log(`Processing image ${id} -> ${format}`);
 
   try {
-    const instance = await getSharpInstance(inputPath);
-    const metadata = await instance.metadata();
-    const is16Bit = metadata.depth === 'ushort' || metadata.depth === 'short';
+    // Pass raw dimension options to the loader
+    const rawOptions = {
+        width: options.rawWidth,
+        height: options.rawHeight,
+        pixelFormat: options.rawPixelFormat
+    };
 
+    const instance = await getSharpInstance(inputPath, rawOptions);
+    const metadata = await instance.metadata();
+    
     let pipeline = instance.clone();
     
-    // SAFETY FIX: 
-    // If the input is BMP, we force remove alpha channel immediately.
-    // Even if we fixed the bmp-js loader, libvips might have loaded a 32-bit BMP (XRGB) as RGBA(0).
-    // Removing alpha forces it to ignore the transparency channel and keep pixel values.
-    // We DO NOT do this for PNG/WebP, as users might want to preserve transparency there.
     if (metadata.format === 'bmp' || path.extname(originalFile).toLowerCase() === '.bmp') {
         pipeline = pipeline.removeAlpha();
     }
@@ -287,17 +439,17 @@ app.post('/api/process', async (req, res) => {
     // 5. Output Generation
     if (format === 'bmp') {
         const { data: buffer, info } = await pipeline
-          .ensureAlpha() // Add opaque alpha back if it was removed
+          .ensureAlpha()
           .toColorspace('srgb')
           .raw()
           .toBuffer({ resolveWithObject: true });
 
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
-          abgrBuffer[i]     = 255;             // Force Opaque Output
-          abgrBuffer[i + 1] = buffer[i + 2];   // B
-          abgrBuffer[i + 2] = buffer[i + 1];   // G
-          abgrBuffer[i + 3] = buffer[i];       // R
+          abgrBuffer[i]     = 255;
+          abgrBuffer[i + 1] = buffer[i + 2];
+          abgrBuffer[i + 2] = buffer[i + 1];
+          abgrBuffer[i + 3] = buffer[i];
         }
 
         const rawData = {
@@ -314,6 +466,9 @@ app.post('/api/process', async (req, res) => {
              pipeline = pipeline.jpeg({ quality: options.quality });
         } else if (format === 'png') {
             const pngOptions = {};
+            // is16Bit might be undefined here as metadata var inside try block, 
+            // but we can assume false for now as UYVY->RGB is 8bit.
+            const is16Bit = false; 
             if (is16Bit) {
                 pngOptions.bitdepth = 16;
                 pngOptions.palette = false;
