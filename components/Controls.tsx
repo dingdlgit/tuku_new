@@ -1,5 +1,6 @@
+
 import React from 'react';
-import { ImageFormat, ProcessOptions } from '../types';
+import { ImageFormat, ProcessOptions, Language } from '../types';
 
 interface ControlsProps {
   options: ProcessOptions;
@@ -7,6 +8,7 @@ interface ControlsProps {
   onProcess: () => void;
   isProcessing: boolean;
   originalDimensions?: { width: number; height: number };
+  lang: Language;
 }
 
 export const Controls: React.FC<ControlsProps> = ({ 
@@ -14,9 +16,47 @@ export const Controls: React.FC<ControlsProps> = ({
   setOptions, 
   onProcess, 
   isProcessing,
-  originalDimensions 
+  originalDimensions,
+  lang
 }) => {
   
+  const t = {
+    en: {
+      settings: "Settings",
+      format: "Format",
+      bmpNote: "Note: BMP output is converted to PNG for compatibility.",
+      quality: "Quality",
+      resize: "Resize",
+      maintainAspect: "Maintain Aspect Ratio",
+      transform: "Transform",
+      filters: "Filters",
+      grayscale: "Grayscale",
+      sharpen: "Sharpen",
+      blur: "Blur",
+      watermark: "Watermark",
+      watermarkPlaceholder: "Enter text...",
+      processBtn: "Process Image",
+      processing: "Processing..."
+    },
+    zh: {
+      settings: "设置",
+      format: "输出格式",
+      bmpNote: "注意：BMP 格式将自动转换为 PNG 以保证兼容性。",
+      quality: "画质质量",
+      resize: "调整尺寸",
+      maintainAspect: "保持长宽比",
+      transform: "旋转与翻转",
+      filters: "滤镜效果",
+      grayscale: "黑白 (灰度)",
+      sharpen: "锐化",
+      blur: "模糊",
+      watermark: "添加水印",
+      watermarkPlaceholder: "输入水印文字...",
+      processBtn: "开始处理",
+      processing: "处理中..."
+    }
+  }[lang];
+
   const updateOption = <K extends keyof ProcessOptions>(key: K, value: ProcessOptions[K]) => {
     setOptions(prev => ({ ...prev, [key]: value }));
   };
@@ -28,14 +68,14 @@ export const Controls: React.FC<ControlsProps> = ({
           <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 mr-2 text-indigo-600">
             <path d="M10 3.75a2 2 0 10-4 0 2 2 0 004 0zM17.25 4.5a.75.75 0 00-1.5 0h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 001.5 0zm-14.5 0a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5zM10 8.5a2 2 0 10-4 0 2 2 0 004 0zM17.25 9.25a.75.75 0 00-1.5 0h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 001.5 0zm-14.5 0a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5zM10 13.25a2 2 0 10-4 0 2 2 0 004 0zM17.25 14a.75.75 0 00-1.5 0h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 001.5 0zm-14.5 0a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5z" />
           </svg>
-          Settings
+          {t.settings}
         </h2>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-6">
         {/* Format & Quality */}
         <section>
-          <label className="block text-sm font-medium text-slate-700 mb-2">Format</label>
+          <label className="block text-sm font-medium text-slate-700 mb-2">{t.format}</label>
           <div className="grid grid-cols-3 gap-2">
             {[ImageFormat.ORIGINAL, ImageFormat.JPEG, ImageFormat.PNG, ImageFormat.WEBP, ImageFormat.BMP].map(fmt => (
               <button
@@ -53,7 +93,7 @@ export const Controls: React.FC<ControlsProps> = ({
           </div>
           {options.format === ImageFormat.BMP && (
             <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-2 rounded">
-              Note: BMP output is converted to PNG for compatibility.
+              {t.bmpNote}
             </p>
           )}
         </section>
@@ -61,7 +101,7 @@ export const Controls: React.FC<ControlsProps> = ({
         {options.format !== ImageFormat.PNG && options.format !== ImageFormat.BMP && (
           <section>
             <div className="flex justify-between mb-2">
-              <label className="text-sm font-medium text-slate-700">Quality</label>
+              <label className="text-sm font-medium text-slate-700">{t.quality}</label>
               <span className="text-sm text-slate-500">{options.quality}%</span>
             </div>
             <input
@@ -77,7 +117,7 @@ export const Controls: React.FC<ControlsProps> = ({
 
         {/* Dimensions */}
         <section>
-          <label className="block text-sm font-medium text-slate-700 mb-2">Resize</label>
+          <label className="block text-sm font-medium text-slate-700 mb-2">{t.resize}</label>
           <div className="flex gap-2 items-center mb-3">
             <div className="relative w-full">
               <input
@@ -109,13 +149,13 @@ export const Controls: React.FC<ControlsProps> = ({
               onChange={(e) => updateOption('maintainAspectRatio', e.target.checked)}
               className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
             />
-            <label htmlFor="aspect" className="ml-2 text-sm text-slate-600">Maintain Aspect Ratio</label>
+            <label htmlFor="aspect" className="ml-2 text-sm text-slate-600">{t.maintainAspect}</label>
           </div>
         </section>
 
         {/* Adjustments */}
         <section>
-          <label className="block text-sm font-medium text-slate-700 mb-2">Transform</label>
+          <label className="block text-sm font-medium text-slate-700 mb-2">{t.transform}</label>
           <div className="flex gap-2 mb-3">
              <button 
                onClick={() => updateOption('rotate', (options.rotate - 90) % 360)}
@@ -148,10 +188,10 @@ export const Controls: React.FC<ControlsProps> = ({
 
         {/* Filters */}
         <section>
-           <label className="block text-sm font-medium text-slate-700 mb-2">Filters</label>
+           <label className="block text-sm font-medium text-slate-700 mb-2">{t.filters}</label>
            <div className="space-y-3">
              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">Grayscale</span>
+                <span className="text-sm text-slate-600">{t.grayscale}</span>
                 <input 
                   type="checkbox" 
                   checked={options.grayscale}
@@ -160,7 +200,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 />
              </div>
              <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">Sharpen</span>
+                <span className="text-sm text-slate-600">{t.sharpen}</span>
                 <input 
                   type="checkbox" 
                   checked={options.sharpen}
@@ -170,7 +210,7 @@ export const Controls: React.FC<ControlsProps> = ({
              </div>
              <div>
                 <div className="flex justify-between mb-1">
-                  <span className="text-sm text-slate-600">Blur</span>
+                  <span className="text-sm text-slate-600">{t.blur}</span>
                   <span className="text-xs text-slate-400">{options.blur}px</span>
                 </div>
                 <input
@@ -188,10 +228,10 @@ export const Controls: React.FC<ControlsProps> = ({
 
         {/* Watermark */}
         <section>
-           <label className="block text-sm font-medium text-slate-700 mb-2">Watermark</label>
+           <label className="block text-sm font-medium text-slate-700 mb-2">{t.watermark}</label>
            <input
              type="text"
-             placeholder="Enter text..."
+             placeholder={t.watermarkPlaceholder}
              value={options.watermarkText}
              onChange={(e) => updateOption('watermarkText', e.target.value)}
              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
@@ -210,7 +250,7 @@ export const Controls: React.FC<ControlsProps> = ({
             }
           `}
         >
-          {isProcessing ? 'Processing...' : 'Process Image'}
+          {isProcessing ? t.processing : t.processBtn}
         </button>
       </div>
     </div>

@@ -1,4 +1,6 @@
 
+export type Language = 'en' | 'zh';
+
 export enum ImageFormat {
   ORIGINAL = 'original',
   JPEG = 'jpeg',

@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
-import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse } from './types';
+import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language } from './types';
 
 const defaultOptions: ProcessOptions = {
   format: ImageFormat.ORIGINAL,
@@ -21,11 +21,44 @@ const defaultOptions: ProcessOptions = {
 };
 
 function App() {
+  const [lang, setLang] = useState<Language>('en');
   const [currentFile, setCurrentFile] = useState<UploadResponse | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [options, setOptions] = useState<ProcessOptions>(defaultOptions);
   const [result, setResult] = useState<ProcessResponse | null>(null);
+
+  // Localization Dictionary for App.tsx
+  const t = {
+    en: {
+      sloganTitle: "Edit & Convert Images Instantly",
+      sloganDesc: "Drag and drop your images to start converting, resizing, and optimizing.",
+      uploadFailed: "Upload failed",
+      processFailed: "Processing failed",
+      processedSuccess: "Processed Successfully",
+      preview: "Preview",
+      originalSize: "Original Size",
+      newSize: "New Size",
+      savings: "Savings",
+      startOver: "Start Over",
+      download: "Download",
+      serverDesc: "Fast, secure image processing on your server"
+    },
+    zh: {
+      sloganTitle: "即刻编辑与转换您的图片",
+      sloganDesc: "拖拽图片至此，即可开始转换、裁剪与优化。",
+      uploadFailed: "上传失败",
+      processFailed: "处理失败",
+      processedSuccess: "处理成功",
+      preview: "预览",
+      originalSize: "原始大小",
+      newSize: "处理后大小",
+      savings: "体积减少",
+      startOver: "重新开始",
+      download: "下载图片",
+      serverDesc: "快速、安全的服务器端图片处理"
+    }
+  }[lang];
 
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
@@ -40,12 +73,12 @@ function App() {
       });
 
       if (!response.ok) {
-        let errorMessage = `Upload failed (${response.status})`;
+        let errorMessage = `${t.uploadFailed} (${response.status})`;
         try {
           const errorData = await response.json();
           if (errorData.error) errorMessage = errorData.error;
         } catch (e) {
-          errorMessage = `Upload failed: ${response.statusText || response.status}`;
+          errorMessage = `${t.uploadFailed}: ${response.statusText || response.status}`;
         }
         throw new Error(errorMessage);
       }
@@ -63,7 +96,7 @@ function App() {
       });
     } catch (error: any) {
       console.error(error);
-      alert(error.message || 'Failed to upload image');
+      alert(error.message || t.uploadFailed);
     } finally {
       setIsUploading(false);
     }
@@ -84,12 +117,12 @@ function App() {
       });
 
       if (!response.ok) {
-        let errorMessage = 'Processing failed';
+        let errorMessage = t.processFailed;
         try {
           const errorData = await response.json();
           if (errorData.error) errorMessage = errorData.error;
         } catch (e) {
-           errorMessage = `Processing failed: ${response.statusText}`;
+           errorMessage = `${t.processFailed}: ${response.statusText}`;
         }
         throw new Error(errorMessage);
       }
@@ -98,7 +131,7 @@ function App() {
       setResult(data);
     } catch (error: any) {
       console.error(error);
-      alert(error.message || 'Failed to process image');
+      alert(error.message || t.processFailed);
     } finally {
       setIsProcessing(false);
     }
@@ -132,6 +165,10 @@ function App() {
     return depth.charAt(0).toUpperCase() + depth.slice(1);
   };
 
+  const toggleLang = () => {
+    setLang(prev => prev === 'en' ? 'zh' : 'en');
+  };
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -143,10 +180,21 @@ function App() {
                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
                </svg>
             </div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-800">TuKu <span className="font-normal text-slate-400">| 图酷酷</span></h1>
+            <h1 className="text-xl font-bold tracking-tight text-slate-800">TuKuKu</h1>
           </div>
-          <div className="text-sm text-slate-500">
-             Fast, secure image processing on your server
+          <div className="flex items-center gap-4">
+             <div className="hidden md:block text-sm text-slate-500">
+               {t.serverDesc}
+             </div>
+             <button 
+               onClick={toggleLang}
+               className="flex items-center justify-center px-3 py-1.5 text-xs font-semibold rounded border border-slate-300 hover:bg-slate-50 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+             >
+                <svg className="w-4 h-4 mr-1.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129" />
+                </svg>
+                {lang === 'en' ? '中文' : 'English'}
+             </button>
           </div>
         </div>
       </header>
@@ -159,10 +207,10 @@ function App() {
             {!currentFile ? (
               <div className="h-full flex flex-col justify-center items-center max-w-2xl mx-auto">
                 <div className="w-full text-center mb-10">
-                   <h2 className="text-4xl font-extrabold text-slate-800 mb-4">Edit & Convert Images Instantly</h2>
-                   <p className="text-lg text-slate-600">Drag and drop your images to start converting, resizing, and optimizing.</p>
+                   <h2 className="text-4xl font-extrabold text-slate-800 mb-4">{t.sloganTitle}</h2>
+                   <p className="text-lg text-slate-600">{t.sloganDesc}</p>
                 </div>
-                <Dropzone onFileSelect={handleFileUpload} isUploading={isUploading} />
+                <Dropzone onFileSelect={handleFileUpload} isUploading={isUploading} lang={lang} />
               </div>
             ) : (
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-full pb-10">
@@ -174,6 +222,7 @@ function App() {
                     onProcess={handleProcess}
                     isProcessing={isProcessing}
                     originalDimensions={{ width: currentFile.width || 0, height: currentFile.height || 0 }}
+                    lang={lang}
                   />
                 </div>
 
@@ -193,7 +242,7 @@ function App() {
                             <img src={result.url} alt="Processed" className="max-h-[500px] object-contain shadow-xl rounded-lg border border-slate-300" />
                             <div className="mt-4 bg-green-50 text-green-700 px-4 py-2 rounded-full text-sm font-medium border border-green-200 flex items-center">
                                <svg className="w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                               Processed Successfully
+                               {t.processedSuccess}
                             </div>
                          </div>
                       ) : (
@@ -206,7 +255,7 @@ function App() {
                                ${options.sharpen ? 'contrast(1.2)' : ''}
                              `
                            }} />
-                           {!result && <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">Preview</div>}
+                           {!result && <div className="absolute top-2 right-2 bg-black/60 text-white text-xs px-2 py-1 rounded backdrop-blur-sm">{t.preview}</div>}
                         </div>
                       )}
                     </div>
@@ -217,7 +266,7 @@ function App() {
                     <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm flex items-center justify-between animate-fade-in-up">
                        <div className="flex items-center gap-4">
                           <div className="text-sm">
-                             <p className="text-slate-500">Original Size</p>
+                             <p className="text-slate-500">{t.originalSize}</p>
                              <p className="font-semibold text-slate-800">
                                {formatSize(currentFile.size)} 
                                {getBitDepthLabel(currentFile.depth) && (
@@ -230,12 +279,12 @@ function App() {
                           </div>
                           <div className="w-px h-8 bg-slate-200"></div>
                           <div className="text-sm">
-                             <p className="text-slate-500">New Size</p>
+                             <p className="text-slate-500">{t.newSize}</p>
                              <p className="font-semibold text-indigo-600">{formatSize(result.size)}</p>
                           </div>
                           <div className="w-px h-8 bg-slate-200"></div>
                           <div className="text-sm">
-                             <p className="text-slate-500">Savings</p>
+                             <p className="text-slate-500">{t.savings}</p>
                              <p className="font-semibold text-green-600">
                                {currentFile.size > result.size 
                                  ? Math.round(((currentFile.size - result.size) / currentFile.size) * 100) + '%'
@@ -249,7 +298,7 @@ function App() {
                            onClick={handleReset}
                            className="px-4 py-2 text-sm font-medium text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
                          >
-                           Start Over
+                           {t.startOver}
                          </button>
                          <a 
                            href={result.url} 
@@ -257,7 +306,7 @@ function App() {
                            className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2 rounded-lg font-semibold hover:bg-indigo-700 hover:shadow-lg hover:shadow-indigo-500/30 transition-all active:scale-95"
                          >
                             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                            Download
+                            {t.download}
                          </a>
                        </div>
                     </div>
