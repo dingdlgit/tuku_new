@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import bmp from 'bmp-js'; // Import bmp-js for fallback decoding
+import bmp from 'bmp-js'; // Import bmp-js for fallback decoding AND encoding
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 
@@ -201,6 +201,8 @@ app.post('/api/process', async (req, res) => {
   if (format === 'original') {
     format = path.extname(originalFile).slice(1).toLowerCase();
   }
+  // Standardize format string for sharp/logic
+  if (format === 'jpg') format = 'jpeg';
 
   const outputFilename = `tuku_${id}_${Date.now()}.${format}`;
   const outputPath = path.join(PROCESSED_DIR, outputFilename);
@@ -257,28 +259,57 @@ app.post('/api/process', async (req, res) => {
        }]);
     }
 
-    // 5. Format Output
-    if (['jpeg', 'jpg'].includes(format)) {
-        pipeline = pipeline.jpeg({ quality: options.quality });
-    } else if (format === 'png') {
-        const pngOptions = {};
-        if (is16Bit) {
-            pngOptions.bitdepth = 16;
-            pngOptions.palette = false;
-        }
-        pipeline = pipeline.png(pngOptions);
-    } else if (format === 'webp') {
-        pipeline = pipeline.webp({ quality: options.quality });
-    } else if (format === 'avif') {
-        pipeline = pipeline.avif({ quality: options.quality });
-    } else if (format === 'bmp') {
-        // Explicit BMP support
-        pipeline = pipeline.toFormat('bmp');
-    } else {
-        pipeline = pipeline.toFormat(format);
-    }
+    // 5. Output Generation
+    // Special handling: Sharp often cannot WRITE BMP natively. We must use bmp-js.
+    if (format === 'bmp') {
+        // Extract raw RGBA data from pipeline
+        const { data: buffer, info } = await pipeline
+          .ensureAlpha()
+          .raw()
+          .toBuffer({ resolveWithObject: true });
 
-    await pipeline.toFile(outputPath);
+        // Convert RGBA (Sharp) to ABGR (bmp-js expectation)
+        const abgrBuffer = Buffer.alloc(buffer.length);
+        for (let i = 0; i < buffer.length; i += 4) {
+          abgrBuffer[i]     = buffer[i + 3]; // A
+          abgrBuffer[i + 1] = buffer[i + 2]; // B
+          abgrBuffer[i + 2] = buffer[i + 1]; // G
+          abgrBuffer[i + 3] = buffer[i];     // R
+        }
+
+        // Encode to BMP
+        const rawData = {
+          data: abgrBuffer,
+          width: info.width,
+          height: info.height
+        };
+        const bmpData = bmp.encode(rawData);
+        
+        // Write manually
+        fs.writeFileSync(outputPath, bmpData.data);
+
+    } else {
+        // Standard Sharp Output for other formats
+        if (['jpeg', 'jpg'].includes(format)) {
+            pipeline = pipeline.jpeg({ quality: options.quality });
+        } else if (format === 'png') {
+            const pngOptions = {};
+            if (is16Bit) {
+                pngOptions.bitdepth = 16;
+                pngOptions.palette = false;
+            }
+            pipeline = pipeline.png(pngOptions);
+        } else if (format === 'webp') {
+            pipeline = pipeline.webp({ quality: options.quality });
+        } else if (format === 'avif') {
+            pipeline = pipeline.avif({ quality: options.quality });
+        } else {
+            // Safe fallback for standard formats
+            pipeline = pipeline.toFormat(format);
+        }
+        
+        await pipeline.toFile(outputPath);
+    }
     
     const stats = fs.statSync(outputPath);
     console.log(`Processing complete: ${outputFilename}`);
