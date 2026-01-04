@@ -220,6 +220,15 @@ app.post('/api/process', async (req, res) => {
 
     let pipeline = instance.clone();
     
+    // CRITICAL FIX: Remove Alpha channel immediately.
+    // Why? If the input BMP/image has a 4th channel (Alpha) that is filled with 0 (padding),
+    // Sharp's resize operation uses "premultiplied alpha".
+    // Math: R_new = R_old * (Alpha / 255). If Alpha is 0, R_new becomes 0.
+    // This turns the entire image black during resize.
+    // Removing alpha here forces Sharp to treat it as opaque RGB, preserving the color data.
+    // We will add a fresh, opaque alpha channel back later if needed (e.g., for BMP output).
+    pipeline = pipeline.removeAlpha();
+
     // Track current dimensions manually to support Watermark generation later
     let currentWidth = metadata.width;
     let currentHeight = metadata.height;
@@ -299,7 +308,7 @@ app.post('/api/process', async (req, res) => {
         // Fallback to bmp-js for encoding because Sharp support for BMP output is inconsistent in Docker
         // Ensure we have RGBA data from Sharp
         const { data: buffer, info } = await pipeline
-          .ensureAlpha() // Ensure 4 channels
+          .ensureAlpha() // Add a fresh, 100% Opaque Alpha channel (255) back for the buffer
           .toColorspace('srgb')
           .raw()
           .toBuffer({ resolveWithObject: true });
@@ -307,10 +316,8 @@ app.post('/api/process', async (req, res) => {
         // Convert RGBA (Sharp) to ABGR (bmp-js expectation)
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
-          // CRITICAL FIX: Force Alpha to 255 (Opaque).
-          // If the input image was interpreted as having 0 alpha (transparent), it looks black.
-          // By forcing 255, we guarantee the image is visible.
-          abgrBuffer[i]     = 255;             // A (Alpha) - Forced Opaque
+          // Because we did .ensureAlpha(), buffer[i+3] is now 255 (Opaque)
+          abgrBuffer[i]     = buffer[i + 3];   // A (Alpha)
           abgrBuffer[i + 1] = buffer[i + 2];   // B (Blue)
           abgrBuffer[i + 2] = buffer[i + 1];   // G (Green)
           abgrBuffer[i + 3] = buffer[i];       // R (Red)
@@ -325,9 +332,9 @@ app.post('/api/process', async (req, res) => {
         fs.writeFileSync(outputPath, bmpData.data);
 
     } else {
-        // For other formats (JPG, PNG), we also want to be careful about transparency causing black output
+        // For other formats
         if (['jpeg', 'jpg'].includes(format)) {
-             // Flatten transparency to white before saving as JPEG
+             // Safe to flatten again, though removeAlpha already handled it essentially
              pipeline = pipeline.flatten({ background: '#ffffff' });
              pipeline = pipeline.jpeg({ quality: options.quality });
         } else if (format === 'png') {
