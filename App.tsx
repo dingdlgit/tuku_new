@@ -119,10 +119,13 @@ function App() {
   };
 
   const getBitDepthLabel = (depth?: string) => {
+    if (!depth) return null;
     if (depth === 'ushort' || depth === 'short') return '16-bit';
     if (depth === 'float') return '32-bit Float';
     if (depth === 'uchar') return '8-bit';
-    return depth || '8-bit';
+    if (depth === 'uint' || depth === 'int') return '32-bit Int';
+    // Fallback: capitalize first letter
+    return depth.charAt(0).toUpperCase() + depth.slice(1);
   };
 
   return (
@@ -213,8 +216,12 @@ function App() {
                              <p className="text-slate-500">Original Size</p>
                              <p className="font-semibold text-slate-800">
                                {formatSize(currentFile.size)} 
-                               <span className="text-slate-300 mx-2">|</span> 
-                               {getBitDepthLabel(currentFile.depth)}
+                               {getBitDepthLabel(currentFile.depth) && (
+                                 <>
+                                   <span className="text-slate-300 mx-2">|</span> 
+                                   {getBitDepthLabel(currentFile.depth)}
+                                 </>
+                               )}
                              </p>
                           </div>
                           <div className="w-px h-8 bg-slate-200"></div>
