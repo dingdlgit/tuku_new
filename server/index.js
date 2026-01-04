@@ -69,51 +69,56 @@ app.use('/api/processed', express.static(PROCESSED_DIR));
 /**
  * Robust Image Loader Helper
  * Tries to load image with Sharp directly.
- * If that fails (common with BMPs), falls back to bmp-js decoding
- * and creates a Sharp instance from raw pixel data.
+ * If that fails (common with legacy BMPs), falls back to bmp-js decoding.
  */
 async function getSharpInstance(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   
   try {
-    // 1. Try standard Sharp loading first
+    // 1. Try standard Sharp loading first.
+    // Sharp uses libvips which sniffs the file content (Magic Numbers).
+    // This handles cases where a file is named .bmp but contains PNG or JPEG data.
     const instance = sharp(filePath, { 
       failOnError: false, 
       limitInputPixels: false 
     });
     
-    // Check Metadata to ensure file is readable
-    await instance.metadata(); 
+    // Check Metadata to ensure file is readable and determine true format
+    const metadata = await instance.metadata(); 
 
-    // CRITICAL FIX: Paranoid Check for BMPs
-    // Libvips can often read BMP headers (metadata) but fail on pixel data (unsupported compression).
-    // If it's a BMP, force a tiny render operation here. 
-    // If this crashes, we CATCH it below and force the fallback.
-    if (ext === '.bmp') {
-        await instance.clone().resize(8, 8).toBuffer();
+    // Specific check for files that are TRULY BMP (per metadata) but might be unsupported by libvips.
+    // If metadata.format is 'png', 'jpeg', etc., even if extension is .bmp, we are fine.
+    // If metadata.format is 'bmp', we try a small render to see if libvips crashes on the pixel data.
+    if (metadata.format === 'bmp') {
+        try {
+           await instance.clone().resize(8, 8).toBuffer();
+        } catch (e) {
+           // If render fails, throw to trigger fallback
+           throw new Error('Libvips failed to render BMP pixel data');
+        }
     }
     
     return instance;
   } catch (error) {
-    // 2. If standard loading fails (metadata or pixel read), try manual decoding
+    // 2. Fallback: only strictly necessary for actual legacy/unsupported BMPs
+    // If standard loading failed, and it might be a BMP (by extension or implication), try bmp-js
     if (ext === '.bmp') {
-      console.log(`Standard Sharp load failed for BMP (${error.message}), switching to bmp-js fallback for: ${filePath}`);
+      console.log(`Standard Sharp load failed for BMP-like file (${error.message}), switching to bmp-js fallback for: ${filePath}`);
       try {
         const buffer = fs.readFileSync(filePath);
         const bitmap = bmp.decode(buffer);
         
         // bmp-js returns data in ABGR format [A, B, G, R]
         // Sharp raw input expects RGBA format [R, G, B, A]
-        // We must manually swap the channels.
         const abgr = bitmap.data;
         const len = abgr.length;
         const rgba = Buffer.alloc(len);
 
         for (let i = 0; i < len; i += 4) {
-          rgba[i]     = abgr[i + 3]; // R (from last byte of ABGR)
+          rgba[i]     = abgr[i + 3]; // R
           rgba[i + 1] = abgr[i + 2]; // G
           rgba[i + 2] = abgr[i + 1]; // B
-          rgba[i + 3] = abgr[i];     // A (from first byte of ABGR)
+          rgba[i + 3] = abgr[i];     // A
         }
 
         return sharp(rgba, {
@@ -126,7 +131,7 @@ async function getSharpInstance(filePath) {
 
       } catch (bmpError) {
         console.error('bmp-js fallback also failed:', bmpError);
-        throw error; // Throw original error if fallback fails
+        throw error; // Throw original error
       }
     }
     throw error;
@@ -142,7 +147,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
   console.log(`Processing upload: ${req.file.originalname} (${req.file.size} bytes)`);
 
   try {
-    // Use helper to get a valid instance (handles BMP fallback)
+    // Use helper to get a valid instance (handles BMP/Misnamed files)
     const imagePipeline = await getSharpInstance(req.file.path);
     const metadata = await imagePipeline.metadata();
     
@@ -161,6 +166,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
     });
   } catch (error) {
     console.error('Metadata extraction completely failed:', error.message);
+    // Even if we can't extract metadata (e.g. raw uyvy without header), we return success 
+    // to allow the user to try processing it, though process step might fail if format is unrecognized.
     res.json({
       id: path.parse(req.file.filename).name,
       filename: req.file.filename,
@@ -195,21 +202,16 @@ app.post('/api/process', async (req, res) => {
     format = path.extname(originalFile).slice(1).toLowerCase();
   }
 
-  // FORCE PNG FOR BMP INPUT/OUTPUT
-  if (format === 'bmp') {
-    format = 'png';
-  }
-
   const outputFilename = `tuku_${id}_${Date.now()}.${format}`;
   const outputPath = path.join(PROCESSED_DIR, outputFilename);
 
   console.log(`Processing image ${id} -> ${format}`);
 
   try {
-    // Use helper to get valid instance (handles BMP fallback)
+    // Use helper to get valid instance
     const instance = await getSharpInstance(inputPath);
     
-    // Check input depth to preserve it
+    // Check input depth to preserve it where possible
     const metadata = await instance.metadata();
     const is16Bit = metadata.depth === 'ushort' || metadata.depth === 'short';
 
@@ -237,7 +239,6 @@ app.post('/api/process', async (req, res) => {
     // 4. Watermark
     if (options.watermarkText) {
        const width = options.width || 800;
-       // Updated font stack to include CJK fonts
        const svgText = `
         <svg width="${width}" height="100">
           <style>
@@ -258,27 +259,21 @@ app.post('/api/process', async (req, res) => {
 
     // 5. Format Output
     if (['jpeg', 'jpg'].includes(format)) {
-        // JPEG is always 8-bit
         pipeline = pipeline.jpeg({ quality: options.quality });
     } else if (format === 'png') {
-        // PNG can be 8 or 16 bit. 
-        // If input was 16-bit, we preserve it. 
-        // IMPORTANT: We do NOT pass 'quality' here because it triggers lossy quantization (8-bit palette),
-        // effectively destroying bit depth. We want true lossless PNG.
         const pngOptions = {};
         if (is16Bit) {
-            console.log('Preserving 16-bit depth for PNG output');
             pngOptions.bitdepth = 16;
-            pngOptions.palette = false; // Ensure truecolor
+            pngOptions.palette = false;
         }
-        // If we want compression level control (lossless):
-        // pngOptions.compressionLevel = 9; 
         pipeline = pipeline.png(pngOptions);
-
     } else if (format === 'webp') {
         pipeline = pipeline.webp({ quality: options.quality });
     } else if (format === 'avif') {
         pipeline = pipeline.avif({ quality: options.quality });
+    } else if (format === 'bmp') {
+        // Explicit BMP support
+        pipeline = pipeline.toFormat('bmp');
     } else {
         pipeline = pipeline.toFormat(format);
     }
@@ -297,7 +292,7 @@ app.post('/api/process', async (req, res) => {
   } catch (error) {
     console.error('Processing error details:', error);
     const msg = error.message.includes('unsupported image format') 
-      ? 'Input format corrupted or unsupported. Try converting to PNG/JPG first.' 
+      ? 'Input format corrupted or unsupported.' 
       : error.message;
       
     res.status(500).json({ error: `Processing failed: ${msg}` });

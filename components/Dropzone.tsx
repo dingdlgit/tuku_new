@@ -16,15 +16,15 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
     en: {
       uploading: "Uploading...",
       mainText: "Click to Upload or Drag & Drop",
-      subText: "JPG, PNG, WEBP, BMP up to 20MB",
-      formatError: "Format not supported. Please upload JPG, PNG, WEBP, BMP, or GIF.",
+      subText: "JPG, PNG, WEBP, BMP, UYVY up to 20MB",
+      formatError: "Format not supported.",
       sizeError: "File too large. Max size is 20MB."
     },
     zh: {
       uploading: "正在上传...",
       mainText: "点击上传或拖拽图片到此处",
-      subText: "支持 JPG, PNG, WEBP, BMP (最大 20MB)",
-      formatError: "不支持该格式。请上传 JPG, PNG, WEBP, BMP 或 GIF。",
+      subText: "支持 JPG, PNG, WEBP, BMP, UYVY (最大 20MB)",
+      formatError: "不支持该格式。",
       sizeError: "文件过大。最大允许 20MB。"
     }
   }[lang];
@@ -54,8 +54,16 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
   };
 
   const validateAndUpload = (file: File) => {
-    const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/heic', 'image/gif'];
-    if (!validTypes.includes(file.type)) {
+    // Relaxed validation: Check extensions for specific formats that might have generic/missing MIME types
+    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.heic', '.uyvy'];
+    const validMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/x-ms-bmp', 'image/gif', 'image/heic'];
+    
+    const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
+    
+    // Allow if MIME type is valid OR extension is valid
+    const isValid = validMimes.includes(file.type) || validExtensions.includes(fileExt);
+
+    if (!isValid) {
       alert(t.formatError);
       return;
     }
@@ -85,7 +93,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
         ref={fileInputRef} 
         onChange={handleChange} 
         className="hidden" 
-        accept="image/jpeg,image/png,image/webp,image/bmp,image/gif"
+        accept="image/*,.uyvy,.bmp"
       />
       
       {isUploading ? (

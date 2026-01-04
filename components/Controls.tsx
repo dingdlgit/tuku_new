@@ -24,7 +24,6 @@ export const Controls: React.FC<ControlsProps> = ({
     en: {
       settings: "Settings",
       format: "Format",
-      bmpNote: "Note: BMP output is converted to PNG for compatibility.",
       quality: "Quality",
       resize: "Resize",
       maintainAspect: "Maintain Aspect Ratio",
@@ -41,7 +40,6 @@ export const Controls: React.FC<ControlsProps> = ({
     zh: {
       settings: "设置",
       format: "输出格式",
-      bmpNote: "注意：BMP 格式将自动转换为 PNG 以保证兼容性。",
       quality: "画质质量",
       resize: "调整尺寸",
       maintainAspect: "保持长宽比",
@@ -91,11 +89,6 @@ export const Controls: React.FC<ControlsProps> = ({
               </button>
             ))}
           </div>
-          {options.format === ImageFormat.BMP && (
-            <p className="text-xs text-amber-600 mt-2 bg-amber-50 p-2 rounded">
-              {t.bmpNote}
-            </p>
-          )}
         </section>
 
         {options.format !== ImageFormat.PNG && options.format !== ImageFormat.BMP && (
