@@ -263,25 +263,27 @@ app.post('/api/process', async (req, res) => {
     // Special handling: Sharp often cannot WRITE BMP natively. We must use bmp-js.
     if (format === 'bmp') {
         // Extract raw RGBA data from pipeline
+        // .ensureAlpha() adds 255 (opaque) alpha channel if missing (e.g. from jpg input)
         const { data: buffer, info } = await pipeline
           .ensureAlpha()
           .raw()
           .toBuffer({ resolveWithObject: true });
 
-        // Convert RGBA (Sharp) to BGRA (Standard BMP Little Endian)
+        // Convert RGBA (Sharp) to ABGR (bmp-js expectation)
         // Sharp Buffer: [R, G, B, A, R, G, B, A ...]
-        // Target Buffer: [B, G, R, A, B, G, R, A ...]
-        const bgraBuffer = Buffer.alloc(buffer.length);
+        // Target Buffer: [A, B, G, R, A, B, G, R ...]
+        // By putting Alpha at Index 0, we ensure the image is not interpreted as transparent.
+        const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
-          bgraBuffer[i]     = buffer[i + 2]; // B (from Sharp 2)
-          bgraBuffer[i + 1] = buffer[i + 1]; // G (from Sharp 1)
-          bgraBuffer[i + 2] = buffer[i];     // R (from Sharp 0)
-          bgraBuffer[i + 3] = buffer[i + 3]; // A (from Sharp 3)
+          abgrBuffer[i]     = buffer[i + 3]; // A (from Sharp 3) -> Index 0 (Alpha)
+          abgrBuffer[i + 1] = buffer[i + 2]; // B (from Sharp 2) -> Index 1 (Blue)
+          abgrBuffer[i + 2] = buffer[i + 1]; // G (from Sharp 1) -> Index 2 (Green)
+          abgrBuffer[i + 3] = buffer[i];     // R (from Sharp 0) -> Index 3 (Red)
         }
 
         // Encode to BMP
         const rawData = {
-          data: bgraBuffer,
+          data: abgrBuffer,
           width: info.width,
           height: info.height
         };
