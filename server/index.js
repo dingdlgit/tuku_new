@@ -219,9 +219,29 @@ app.post('/api/process', async (req, res) => {
     const is16Bit = metadata.depth === 'ushort' || metadata.depth === 'short';
 
     let pipeline = instance.clone();
+    
+    // Track current dimensions manually to support Watermark generation later
+    let currentWidth = metadata.width;
+    let currentHeight = metadata.height;
 
     // 1. Resize
     if ((options.width && options.width > 0) || (options.height && options.height > 0)) {
+      // Calculate new dimensions for tracking
+      if (options.width && options.height) {
+         currentWidth = options.width;
+         currentHeight = options.height;
+      } else if (options.width) {
+         currentWidth = options.width;
+         if (options.maintainAspectRatio) {
+            currentHeight = Math.round(metadata.height * (options.width / metadata.width));
+         }
+      } else if (options.height) {
+         currentHeight = options.height;
+         if (options.maintainAspectRatio) {
+             currentWidth = Math.round(metadata.width * (options.height / metadata.height));
+         }
+      }
+
       pipeline = pipeline.resize({
         width: options.width || null,
         height: options.height || null,
@@ -230,7 +250,13 @@ app.post('/api/process', async (req, res) => {
     }
 
     // 2. Rotate & Flip
-    if (options.rotate) pipeline = pipeline.rotate(options.rotate);
+    if (options.rotate) {
+        pipeline = pipeline.rotate(options.rotate);
+        // If rotating 90 or 270 degrees, swap dimensions
+        if (Math.abs(options.rotate) === 90 || Math.abs(options.rotate) === 270) {
+            [currentWidth, currentHeight] = [currentHeight, currentWidth];
+        }
+    }
     if (options.flipX) pipeline = pipeline.flop();
     if (options.flipY) pipeline = pipeline.flip();
 
@@ -241,19 +267,27 @@ app.post('/api/process', async (req, res) => {
 
     // 4. Watermark
     if (options.watermarkText) {
-       const width = options.width || 800;
+       // FIX: Use currentWidth/Height instead of default 800/100
+       // This ensures the SVG is exactly the size of the image, avoiding "Image to composite must have same dimensions or smaller"
+       const svgWidth = currentWidth;
+       const svgHeight = currentHeight;
+       
+       // Calculate dynamic font size (e.g., 5% of width, min 20px)
+       const fontSize = Math.max(Math.floor(svgWidth * 0.05), 20);
+
        const svgText = `
-        <svg width="${width}" height="100">
+        <svg width="${svgWidth}" height="${svgHeight}">
           <style>
             .title { 
               fill: rgba(255, 255, 255, 0.5); 
-              font-size: 48px; 
+              font-size: ${fontSize}px; 
               font-weight: bold; 
               font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei', sans-serif; 
             }
           </style>
           <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" class="title">${options.watermarkText}</text>
         </svg>`;
+       
        pipeline = pipeline.composite([{
           input: Buffer.from(svgText),
           gravity: 'center'
