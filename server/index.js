@@ -237,10 +237,61 @@ async function getSharpInstance(filePath, rawOptions = {}) {
     }
   }
 
-  // --- STANDARD FORMATS (including BMP) ---
-  // We revert to using Sharp/Libvips for BMP input. 
-  // It correctly handles 24-bit padding (fixing scrambled images) 
-  // and color channel order (fixing green/blue swapped images).
+  // --- BMP HANDLING (24-bit & 32-bit Robust Fix) ---
+  if (ext === '.bmp') {
+    try {
+      console.log("Using Robust bmp-js decode for: " + filePath);
+      const buffer = fs.readFileSync(filePath);
+      const bitmap = bmp.decode(buffer);
+      const rawData = bitmap.data; 
+      // bmp-js output is ALWAYS formatted as ABGR (Alpha, Blue, Green, Red)
+      // For 24-bit inputs, it auto-pads to 32-bit but sets Alpha to 0.
+
+      const len = rawData.length;
+      const width = bitmap.width;
+      const height = bitmap.height;
+      const rgba = Buffer.alloc(len);
+      
+      // 1. Detect if image is effectively opaque (24-bit or 32-bit without transparency)
+      // Check a subset of pixels to see if Alpha is consistently 0
+      let maxAlpha = 0;
+      for (let i = 0; i < len; i += 4) {
+           if (rawData[i] > maxAlpha) {
+               maxAlpha = rawData[i];
+           }
+      }
+      
+      // If maxAlpha is 0, it means it's likely a 24-bit image (where bmp-js filled A=0)
+      // In this case, we MUST force alpha to 255, otherwise it shows as transparent/black.
+      const forceOpaque = (maxAlpha === 0);
+      if (forceOpaque) console.log("Detected 24-bit BMP (Alpha=0), forcing opacity.");
+
+      // 2. Map ABGR -> RGBA
+      // bmp-js Buffer Layout: [A, B, G, R, A, B, G, R ...]
+      // Sharp expects:        [R, G, B, A, R, G, B, A ...]
+      for (let i = 0; i < len; i += 4) {
+        const a = rawData[i];
+        const b = rawData[i + 1];
+        const g = rawData[i + 2];
+        const r = rawData[i + 3];
+
+        rgba[i]     = r;                // R
+        rgba[i + 1] = g;                // G
+        rgba[i + 2] = b;                // B
+        rgba[i + 3] = forceOpaque ? 255 : a; // A
+      }
+
+      return sharp(rgba, { 
+        raw: { width, height, channels: 4 } 
+      }).toColorspace('srgb');
+
+    } catch (bmpError) { 
+      console.error("BMP Manual Decode Error:", bmpError);
+      // Fallback: Try sharp native, but likely will fail if bmp-js failed
+    }
+  }
+
+  // --- Standard Formats ---
   return sharp(filePath, { failOnError: false, limitInputPixels: false }).rotate().toColorspace('srgb');
 }
 
