@@ -42,7 +42,6 @@ function App() {
       processedSuccess: "Processed Successfully",
       preview: "Preview",
       noPreview: "Preview not available for RAW formats",
-      noPreviewDesc: "Format not recognized automatically. Please select the Pixel Format and Dimensions in Settings to process.",
       originalSize: "Original Size",
       newSize: "New Size",
       savings: "Savings",
@@ -58,8 +57,7 @@ function App() {
       processFailed: "处理失败",
       processedSuccess: "处理成功",
       preview: "预览",
-      noPreview: "无法预览 (Raw / 未识别)",
-      noPreviewDesc: "无法自动识别该格式。请在右侧设置中手动选择“像素格式”并输入“源图像尺寸”以进行处理。",
+      noPreview: "RAW 格式暂不支持预览",
       originalSize: "原始大小",
       newSize: "处理后大小",
       savings: "体积减少",
@@ -95,12 +93,10 @@ function App() {
       const data: UploadResponse = await response.json();
       setCurrentFile(data);
       
-      // LOGIC: If width is 0, backend failed to recognize it. Treat it as Raw/Unknown.
-      // Also check standard raw extensions just in case backend guessed width correctly but it's still raw.
-      const isRaw = data.width === 0 || 
-                    data.originalName.toLowerCase().endsWith('.uyvy') || 
+      const isRaw = data.originalName.toLowerCase().endsWith('.uyvy') || 
                     data.originalName.toLowerCase().endsWith('.yuv') ||
-                    data.originalName.toLowerCase().endsWith('.nv21');
+                    data.originalName.toLowerCase().endsWith('.nv21') ||
+                    data.width === 0; // If backend couldn't parse it, treat as potential raw
 
       setOptions({
         ...defaultOptions,
@@ -110,7 +106,7 @@ function App() {
         // If raw, assume 1920x1080 default if not guessed
         rawWidth: data.width || (isRaw ? 1920 : undefined),
         rawHeight: data.height || (isRaw ? 1080 : undefined),
-        rawPixelFormat: RawPixelFormat.UYVY // Default to UYVY for manual config
+        rawPixelFormat: RawPixelFormat.UYVY // Default to UYVY for now
       });
     } catch (error: any) {
       console.error(error);
@@ -184,9 +180,9 @@ function App() {
     setLang(prev => prev === 'en' ? 'zh' : 'en');
   };
 
-  // Helper to check for raw formats or unrecognized formats
+  // Helper to check for raw formats that browser can't render
   const isRawFormat = (filename: string, width?: number) => {
-      // If width is 0, backend failed to parse, likely raw or unknown
+      // If width is 0, backend failed to parse, likely raw
       if (width === 0) return true;
       const ext = filename.toLowerCase();
       return ext.endsWith('.uyvy') || ext.endsWith('.yuv') || ext.endsWith('.nv21') || ext.endsWith('.rgb');
@@ -283,7 +279,9 @@ function App() {
                                  </svg>
                                  <span className="text-slate-500 font-medium block">{t.noPreview}</span>
                                  <span className="text-slate-400 text-sm mt-2 block max-w-xs">
-                                    {t.noPreviewDesc}
+                                    {lang === 'en' 
+                                      ? 'Select Pixel Format (e.g. UYVY, NV21) and enter dimensions in Settings to process.' 
+                                      : '请在设置中选择“像素格式”(如 UYVY, NV21) 并输入“源图像尺寸”以进行处理。'}
                                  </span>
                               </div>
                            ) : (
