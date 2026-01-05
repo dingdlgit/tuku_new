@@ -16,14 +16,14 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
     en: {
       uploading: "Uploading...",
       mainText: "Click to Upload or Drag & Drop",
-      subText: "JPG, PNG, WEBP, BMP, UYVY, NV21, YUV, RGB up to 20MB",
+      subText: "JPG, PNG, WEBP, BMP, UYVY up to 20MB",
       formatError: "Format not supported.",
       sizeError: "File too large. Max size is 20MB."
     },
     zh: {
       uploading: "正在上传...",
       mainText: "点击上传或拖拽图片到此处",
-      subText: "支持 JPG, PNG, WEBP, BMP, UYVY, NV21, YUV, RGB (最大 20MB)",
+      subText: "支持 JPG, PNG, WEBP, BMP, UYVY (最大 20MB)",
       formatError: "不支持该格式。",
       sizeError: "文件过大。最大允许 20MB。"
     }
@@ -55,19 +55,12 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
 
   const validateAndUpload = (file: File) => {
     // Relaxed validation: Check extensions for specific formats that might have generic/missing MIME types
-    const validExtensions = [
-      '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.heic', 
-      '.uyvy', '.nv21', '.yuv', '.rgb', '.rgba'
-    ];
-    const validMimes = [
-      'image/jpeg', 'image/png', 'image/webp', 'image/bmp', 
-      'image/x-ms-bmp', 'image/gif', 'image/heic'
-    ];
+    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.heic', '.uyvy'];
+    const validMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/x-ms-bmp', 'image/gif', 'image/heic'];
     
     const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
     
     // Allow if MIME type is valid OR extension is valid
-    // Note: Raw files often have empty or application/octet-stream mime types, so we rely heavily on extension here
     const isValid = validMimes.includes(file.type) || validExtensions.includes(fileExt);
 
     if (!isValid) {
@@ -100,8 +93,7 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
         ref={fileInputRef} 
         onChange={handleChange} 
         className="hidden" 
-        // Update accept attribute to help browser file dialog
-        accept="image/*,.uyvy,.nv21,.yuv,.rgb,.rgba,.bmp"
+        accept="image/*,.uyvy,.bmp"
       />
       
       {isUploading ? (

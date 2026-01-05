@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
-import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language, RawPixelFormat } from './types';
+import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language } from './types';
 
 const defaultOptions: ProcessOptions = {
   format: ImageFormat.ORIGINAL,
@@ -19,8 +19,7 @@ const defaultOptions: ProcessOptions = {
   sharpen: false,
   watermarkText: '',
   rawWidth: undefined,
-  rawHeight: undefined,
-  rawPixelFormat: RawPixelFormat.UYVY
+  rawHeight: undefined
 };
 
 function App() {
@@ -93,20 +92,17 @@ function App() {
       const data: UploadResponse = await response.json();
       setCurrentFile(data);
       
-      const isRaw = data.originalName.toLowerCase().endsWith('.uyvy') || 
-                    data.originalName.toLowerCase().endsWith('.yuv') ||
-                    data.originalName.toLowerCase().endsWith('.nv21') ||
-                    data.width === 0; // If backend couldn't parse it, treat as potential raw
-
+      // If uploading BMP, we can now set format to BMP (but user is warned it outputs PNG)
+      // or just keep it ORIGINAL which the backend also handles safely now.
       setOptions({
         ...defaultOptions,
         format: ImageFormat.ORIGINAL,
         width: data.width || null,
         height: data.height || null,
-        // If raw, assume 1920x1080 default if not guessed
-        rawWidth: data.width || (isRaw ? 1920 : undefined),
-        rawHeight: data.height || (isRaw ? 1080 : undefined),
-        rawPixelFormat: RawPixelFormat.UYVY // Default to UYVY for now
+        // If the backend managed to guess dimensions (e.g. from file size map), pre-fill them
+        // If not (width=0), leave them undefined or set to a sensible default like 1920x1080
+        rawWidth: data.width || 1920,
+        rawHeight: data.height || 1080
       });
     } catch (error: any) {
       console.error(error);
@@ -167,12 +163,15 @@ function App() {
 
   const getBitDepthLabel = (depth?: string) => {
     if (!depth) return null;
+    // Hide '8-bit' (uchar) as it's the standard format. 
+    // Only show if it's high bit-depth to avoid UI clutter and confusion.
     if (depth === 'uchar') return null; 
     
     if (depth === 'ushort' || depth === 'short') return '16-bit';
     if (depth === 'float') return '32-bit Float';
     if (depth === 'uint' || depth === 'int') return '32-bit Int';
     
+    // Fallback: capitalize first letter
     return depth.charAt(0).toUpperCase() + depth.slice(1);
   };
 
@@ -181,11 +180,8 @@ function App() {
   };
 
   // Helper to check for raw formats that browser can't render
-  const isRawFormat = (filename: string, width?: number) => {
-      // If width is 0, backend failed to parse, likely raw
-      if (width === 0) return true;
-      const ext = filename.toLowerCase();
-      return ext.endsWith('.uyvy') || ext.endsWith('.yuv') || ext.endsWith('.nv21') || ext.endsWith('.rgb');
+  const isRawFormat = (filename: string) => {
+      return filename.toLowerCase().endsWith('.uyvy') || filename.toLowerCase().endsWith('.yuv');
   };
 
   return (
@@ -242,7 +238,7 @@ function App() {
                     isProcessing={isProcessing}
                     originalDimensions={{ width: currentFile.width || 0, height: currentFile.height || 0 }}
                     lang={lang}
-                    inputFormat={currentFile.originalName} 
+                    inputFormat={currentFile.originalName} // Pass filename to detect ext for raw inputs
                   />
                 </div>
 
@@ -272,16 +268,14 @@ function App() {
                          </div>
                       ) : (
                         <div className="relative group flex items-center justify-center w-full h-full">
-                           {isRawFormat(currentFile.filename, currentFile.width) ? (
-                              <div className="flex flex-col items-center justify-center p-8 bg-white/80 rounded-lg shadow-sm border border-slate-200 backdrop-blur-sm text-center">
+                           {isRawFormat(currentFile.filename) ? (
+                              <div className="flex flex-col items-center justify-center p-8 bg-white/80 rounded-lg shadow-sm border border-slate-200 backdrop-blur-sm">
                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-12 h-12 text-slate-400 mb-2">
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
                                  </svg>
-                                 <span className="text-slate-500 font-medium block">{t.noPreview}</span>
-                                 <span className="text-slate-400 text-sm mt-2 block max-w-xs">
-                                    {lang === 'en' 
-                                      ? 'Select Pixel Format (e.g. UYVY, NV21) and enter dimensions in Settings to process.' 
-                                      : '请在设置中选择“像素格式”(如 UYVY, NV21) 并输入“源图像尺寸”以进行处理。'}
+                                 <span className="text-slate-500 font-medium">{t.noPreview}</span>
+                                 <span className="text-slate-400 text-sm mt-1 text-center max-w-xs">
+                                    {lang === 'en' ? 'Set "Source Dimensions" in settings to process.' : '请在设置中输入“源图像尺寸”以进行处理。'}
                                  </span>
                               </div>
                            ) : (
