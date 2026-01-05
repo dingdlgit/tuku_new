@@ -237,63 +237,50 @@ async function getSharpInstance(filePath, rawOptions = {}) {
     }
   }
 
-  // --- Standard Formats & Fallbacks ---
-  try {
-    // Attempt standard load first
-    const instance = sharp(filePath, { failOnError: false, limitInputPixels: false });
-    const metadata = await instance.metadata(); 
-    
-    // Sometimes Sharp says it's BMP but fails to decode the pixel data correctly if header is weird
-    // We force a small render to check validity
-    if (metadata.format === 'bmp') {
-        try { 
-            await instance.clone().resize(8, 8).toBuffer(); 
-        } catch (e) { 
-            throw new Error('Libvips failed to render BMP'); 
-        }
+  // --- BMP Handling Override ---
+  // We force manual decoding for BMP to avoid Sharp/libvips channel swapping or stride issues
+  if (ext === '.bmp') {
+    try {
+      console.log("Forcing manual decode for BMP: " + filePath);
+      const buffer = fs.readFileSync(filePath);
+      const bitmap = bmp.decode(buffer);
+      const rawData = bitmap.data; // bmp-js returns ABGR (Alpha, Blue, Green, Red) sequence
+      const len = rawData.length;
+      const rgba = Buffer.alloc(len);
+      
+      // 1. Detect transparency
+      // In bmp-js output: 
+      // i+0 = Alpha, i+1 = Blue, i+2 = Green, i+3 = Red
+      let isOpaque = true;
+      for (let i = 0; i < len; i += 4) {
+           if (rawData[i] !== 0) {
+               isOpaque = false;
+               break;
+           }
+      }
+
+      // 2. Map ABGR -> RGBA
+      for (let i = 0; i < len; i += 4) {
+        const a = rawData[i];
+        const b = rawData[i + 1];
+        const g = rawData[i + 2];
+        const r = rawData[i + 3];
+
+        rgba[i]     = r;                // Red
+        rgba[i + 1] = g;                // Green
+        rgba[i + 2] = b;                // Blue
+        rgba[i + 3] = isOpaque ? 255 : a; // Alpha
+      }
+
+      return sharp(rgba, { raw: { width: bitmap.width, height: bitmap.height, channels: 4 } }).toColorspace('srgb');
+    } catch (bmpError) { 
+      console.warn("Manual BMP decode failed, falling back to Sharp native:", bmpError.message);
+      // Fallthrough to standard sharp load below
     }
-    return instance.rotate().toColorspace('srgb');
-  } catch (error) {
-    // If Sharp failed, try bmp-js
-    if (ext === '.bmp') {
-      try {
-        console.log("Falling back to bmp-js for: " + filePath);
-        const buffer = fs.readFileSync(filePath);
-        const bitmap = bmp.decode(buffer);
-        const rawData = bitmap.data; // bmp-js returns ABGR (Alpha, Blue, Green, Red) sequence
-        const len = rawData.length;
-        const rgba = Buffer.alloc(len);
-        
-        // 1. Detect if image is fully transparent (XRGB case for 24-bit/32-bit BMP)
-        // In bmp-js, byte 0 is Alpha.
-        let isOpaque = true;
-        for (let i = 0; i < len; i += 4) {
-             if (rawData[i] !== 0) {
-                 isOpaque = false;
-                 break;
-             }
-        }
-
-        // 2. Map ABGR -> RGBA
-        // bmp-js: [A, B, G, R]
-        // sharp:  [R, G, B, A]
-        for (let i = 0; i < len; i += 4) {
-          const a = rawData[i];
-          const b = rawData[i + 1];
-          const g = rawData[i + 2];
-          const r = rawData[i + 3];
-
-          rgba[i]     = r;                // Red
-          rgba[i + 1] = g;                // Green
-          rgba[i + 2] = b;                // Blue
-          rgba[i + 3] = isOpaque ? 255 : a; // Alpha
-        }
-
-        return sharp(rgba, { raw: { width: bitmap.width, height: bitmap.height, channels: 4 } }).toColorspace('srgb');
-      } catch (bmpError) { throw error; }
-    }
-    throw error;
   }
+
+  // --- Standard Formats ---
+  return sharp(filePath, { failOnError: false, limitInputPixels: false }).rotate().toColorspace('srgb');
 }
 
 // Routes
@@ -446,7 +433,7 @@ app.post('/api/process', async (req, res) => {
 
     // 5. Output Generation
     if (format === 'bmp') {
-        // Sharp cannot write BMP natively. We must use bmp-js.
+        // Sharp cannot write BMP natively in current version env, using bmp-js
         // Get raw RGBA buffer from Sharp
         const { data: buffer, info } = await pipeline
           .toColorspace('srgb')
@@ -454,6 +441,8 @@ app.post('/api/process', async (req, res) => {
           .toBuffer({ resolveWithObject: true });
 
         // Convert RGBA -> ABGR for bmp-js encoding
+        // Sharp: R, G, B, A
+        // bmp-js: A, B, G, R
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
           const r = buffer[i];
