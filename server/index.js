@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import cors from 'cors';
 import fs from 'fs';
 import path from 'path';
-import bmp from 'bmp-js'; // Import bmp-js for fallback decoding AND encoding
+import bmp from 'bmp-js'; // Import bmp-js for fallback decoding
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 
@@ -275,26 +275,26 @@ async function getSharpInstance(filePath, rawOptions = {}) {
         console.log("Falling back to bmp-js for: " + filePath);
         const buffer = fs.readFileSync(filePath);
         const bitmap = bmp.decode(buffer);
-        const abgr = bitmap.data;
-        const len = abgr.length;
+        const bgra = bitmap.data; // bmp-js returns data in BGRA order (usually)
+        const len = bgra.length;
         const rgba = Buffer.alloc(len);
         
         // Smart Alpha Detection for 32-bit BMP
-        // If all alpha bytes (0th byte in ABGR) are 0, assume XRGB (opaque).
-        // If there are non-zero alpha bytes, assume ARGB (transparent).
+        // Check Alpha channel (last byte in BGRA quartet)
         let isXRGB = true;
         for (let i = 0; i < len; i += 4) {
-             if (abgr[i] !== 0) {
+             if (bgra[i + 3] !== 0) {
                  isXRGB = false;
                  break;
              }
         }
 
         for (let i = 0; i < len; i += 4) {
-          rgba[i]     = abgr[i + 3]; // R
-          rgba[i + 1] = abgr[i + 2]; // G
-          rgba[i + 2] = abgr[i + 1]; // B
-          rgba[i + 3] = isXRGB ? 255 : abgr[i]; // A
+          // Convert BGRA -> RGBA
+          rgba[i]     = bgra[i + 2]; // Red   <- Source[2]
+          rgba[i + 1] = bgra[i + 1]; // Green <- Source[1]
+          rgba[i + 2] = bgra[i];     // Blue  <- Source[0]
+          rgba[i + 3] = isXRGB ? 255 : bgra[i + 3]; // Alpha <- Source[3]
         }
         return sharp(rgba, { raw: { width: bitmap.width, height: bitmap.height, channels: 4 } }).toColorspace('srgb');
       } catch (bmpError) { throw error; }
@@ -383,7 +383,6 @@ app.post('/api/process', async (req, res) => {
     let pipeline = instance.clone();
     
     if (metadata.format === 'bmp' || path.extname(originalFile).toLowerCase() === '.bmp') {
-        // We handle alpha manually in getSharpInstance fallback, but sharp might still output 3 channels if opaque
         // Ensure alpha channel exists for consistency
         pipeline = pipeline.ensureAlpha(); 
     }
@@ -457,39 +456,16 @@ app.post('/api/process', async (req, res) => {
 
     // 5. Output Generation
     if (format === 'bmp') {
-        const { data: buffer, info } = await pipeline
-          .ensureAlpha()
-          .toColorspace('srgb')
-          .raw()
-          .toBuffer({ resolveWithObject: true });
-
-        const abgrBuffer = Buffer.alloc(buffer.length);
-        for (let i = 0; i < buffer.length; i += 4) {
-          // Map RGBA to ABGR
-          // Sharp Output: R=0, G=1, B=2, A=3
-          // BMP ABGR:     A=0, B=1, G=2, R=3
-          abgrBuffer[i]     = buffer[i + 3]; // Alpha
-          abgrBuffer[i + 1] = buffer[i + 2]; // Blue
-          abgrBuffer[i + 2] = buffer[i + 1]; // Green
-          abgrBuffer[i + 3] = buffer[i];     // Red
-        }
-
-        const rawData = {
-          data: abgrBuffer,
-          width: info.width,
-          height: info.height
-        };
-        const bmpData = bmp.encode(rawData);
-        fs.writeFileSync(outputPath, bmpData.data);
-
+        // Use Sharp's native BMP encoder. It handles channel mapping (RGBA -> BMP's BGRA) correctly.
+        // We do NOT manual encode here anymore to avoid channel swap errors.
+        pipeline = pipeline.toFormat('bmp');
+        await pipeline.toFile(outputPath);
     } else {
         if (['jpeg', 'jpg'].includes(format)) {
              pipeline = pipeline.flatten({ background: '#ffffff' });
              pipeline = pipeline.jpeg({ quality: options.quality });
         } else if (format === 'png') {
             const pngOptions = {};
-            // is16Bit might be undefined here as metadata var inside try block, 
-            // but we can assume false for now as UYVY->RGB is 8bit.
             const is16Bit = false; 
             if (is16Bit) {
                 pngOptions.bitdepth = 16;
