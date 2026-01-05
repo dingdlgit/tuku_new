@@ -66,7 +66,7 @@ setInterval(() => {
 app.use('/api/uploads', express.static(UPLOAD_DIR));
 app.use('/api/processed', express.static(PROCESSED_DIR));
 
-// --- PIXEL CONVERSION HELPERS ---
+// --- PIXEL CONVERSION HELPERS (For RAW formats) ---
 
 function convertYuvPixelToRgb(y, u, v, outBuffer, offset) {
   // Standard BT.601 conversion
@@ -237,49 +237,10 @@ async function getSharpInstance(filePath, rawOptions = {}) {
     }
   }
 
-  // --- BMP Handling Override ---
-  // We force manual decoding for BMP to avoid Sharp/libvips channel swapping or stride issues
-  if (ext === '.bmp') {
-    try {
-      console.log("Forcing manual decode for BMP: " + filePath);
-      const buffer = fs.readFileSync(filePath);
-      const bitmap = bmp.decode(buffer);
-      const rawData = bitmap.data; // bmp-js returns ABGR (Alpha, Blue, Green, Red) sequence
-      const len = rawData.length;
-      const rgba = Buffer.alloc(len);
-      
-      // 1. Detect transparency
-      // In bmp-js output: 
-      // i+0 = Alpha, i+1 = Blue, i+2 = Green, i+3 = Red
-      let isOpaque = true;
-      for (let i = 0; i < len; i += 4) {
-           if (rawData[i] !== 0) {
-               isOpaque = false;
-               break;
-           }
-      }
-
-      // 2. Map ABGR -> RGBA
-      for (let i = 0; i < len; i += 4) {
-        const a = rawData[i];
-        const b = rawData[i + 1];
-        const g = rawData[i + 2];
-        const r = rawData[i + 3];
-
-        rgba[i]     = r;                // Red
-        rgba[i + 1] = g;                // Green
-        rgba[i + 2] = b;                // Blue
-        rgba[i + 3] = isOpaque ? 255 : a; // Alpha
-      }
-
-      return sharp(rgba, { raw: { width: bitmap.width, height: bitmap.height, channels: 4 } }).toColorspace('srgb');
-    } catch (bmpError) { 
-      console.warn("Manual BMP decode failed, falling back to Sharp native:", bmpError.message);
-      // Fallthrough to standard sharp load below
-    }
-  }
-
-  // --- Standard Formats ---
+  // --- STANDARD FORMATS (including BMP) ---
+  // We revert to using Sharp/Libvips for BMP input. 
+  // It correctly handles 24-bit padding (fixing scrambled images) 
+  // and color channel order (fixing green/blue swapped images).
   return sharp(filePath, { failOnError: false, limitInputPixels: false }).rotate().toColorspace('srgb');
 }
 
@@ -433,16 +394,18 @@ app.post('/api/process', async (req, res) => {
 
     // 5. Output Generation
     if (format === 'bmp') {
-        // Sharp cannot write BMP natively in current version env, using bmp-js
-        // Get raw RGBA buffer from Sharp
+        // Sharp cannot write BMP natively in standard builds, use bmp-js.
+        // Get raw RGBA buffer from Sharp (Sharp is always RGBA internally)
         const { data: buffer, info } = await pipeline
           .toColorspace('srgb')
           .raw()
           .toBuffer({ resolveWithObject: true });
 
         // Convert RGBA -> ABGR for bmp-js encoding
-        // Sharp: R, G, B, A
-        // bmp-js: A, B, G, R
+        // Sharp Buffer: [R, G, B, A, R, G, B, A...]
+        // bmp-js Expects: Buffer where encode() maps [i+1]->B, [i+2]->G, [i+3]->R, [i]->A
+        // So we must construct input buffer as: [A, B, G, R]
+        
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
           const r = buffer[i];
@@ -450,10 +413,10 @@ app.post('/api/process', async (req, res) => {
           const b = buffer[i + 2];
           const a = buffer[i + 3];
 
-          abgrBuffer[i]     = a; // Alpha
-          abgrBuffer[i + 1] = b; // Blue
-          abgrBuffer[i + 2] = g; // Green
-          abgrBuffer[i + 3] = r; // Red
+          abgrBuffer[i]     = a; // Alpha (Byte 0)
+          abgrBuffer[i + 1] = b; // Blue  (Byte 1)
+          abgrBuffer[i + 2] = g; // Green (Byte 2)
+          abgrBuffer[i + 3] = r; // Red   (Byte 3)
         }
 
         const rawData = {
