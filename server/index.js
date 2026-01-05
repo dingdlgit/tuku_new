@@ -272,12 +272,29 @@ async function getSharpInstance(filePath, rawOptions = {}) {
   } catch (error) {
     if (ext === '.bmp') {
       try {
+        console.log("Falling back to bmp-js for: " + filePath);
         const buffer = fs.readFileSync(filePath);
         const bitmap = bmp.decode(buffer);
         const abgr = bitmap.data;
-        const rgba = Buffer.alloc(abgr.length);
-        for (let i = 0; i < abgr.length; i += 4) {
-          rgba[i] = abgr[i + 3]; rgba[i + 1] = abgr[i + 2]; rgba[i + 2] = abgr[i + 1]; rgba[i + 3] = 255;
+        const len = abgr.length;
+        const rgba = Buffer.alloc(len);
+        
+        // Smart Alpha Detection for 32-bit BMP
+        // If all alpha bytes (0th byte in ABGR) are 0, assume XRGB (opaque).
+        // If there are non-zero alpha bytes, assume ARGB (transparent).
+        let isXRGB = true;
+        for (let i = 0; i < len; i += 4) {
+             if (abgr[i] !== 0) {
+                 isXRGB = false;
+                 break;
+             }
+        }
+
+        for (let i = 0; i < len; i += 4) {
+          rgba[i]     = abgr[i + 3]; // R
+          rgba[i + 1] = abgr[i + 2]; // G
+          rgba[i + 2] = abgr[i + 1]; // B
+          rgba[i + 3] = isXRGB ? 255 : abgr[i]; // A
         }
         return sharp(rgba, { raw: { width: bitmap.width, height: bitmap.height, channels: 4 } }).toColorspace('srgb');
       } catch (bmpError) { throw error; }
@@ -366,7 +383,9 @@ app.post('/api/process', async (req, res) => {
     let pipeline = instance.clone();
     
     if (metadata.format === 'bmp' || path.extname(originalFile).toLowerCase() === '.bmp') {
-        pipeline = pipeline.removeAlpha();
+        // We handle alpha manually in getSharpInstance fallback, but sharp might still output 3 channels if opaque
+        // Ensure alpha channel exists for consistency
+        pipeline = pipeline.ensureAlpha(); 
     }
 
     let currentWidth = metadata.width;
@@ -446,10 +465,13 @@ app.post('/api/process', async (req, res) => {
 
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
-          abgrBuffer[i]     = 255;
-          abgrBuffer[i + 1] = buffer[i + 2];
-          abgrBuffer[i + 2] = buffer[i + 1];
-          abgrBuffer[i + 3] = buffer[i];
+          // Map RGBA to ABGR
+          // Sharp Output: R=0, G=1, B=2, A=3
+          // BMP ABGR:     A=0, B=1, G=2, R=3
+          abgrBuffer[i]     = buffer[i + 3]; // Alpha
+          abgrBuffer[i + 1] = buffer[i + 2]; // Blue
+          abgrBuffer[i + 2] = buffer[i + 1]; // Green
+          abgrBuffer[i + 3] = buffer[i];     // Red
         }
 
         const rawData = {
