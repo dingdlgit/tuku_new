@@ -83,14 +83,30 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        relative w-full h-80 border border-dashed rounded-none flex flex-col items-center justify-center cursor-pointer transition-all duration-300 group overflow-hidden
+        relative w-full h-80 rounded-none flex flex-col items-center justify-center cursor-pointer transition-all duration-300 group overflow-hidden
         ${isDragOver 
-          ? 'border-cyan-400 bg-cyan-900/20' 
-          : 'border-slate-600 bg-slate-900/40 hover:border-cyan-500 hover:bg-slate-800/60'}
+          ? 'bg-cyan-900/20' 
+          : 'bg-slate-900/40 hover:bg-slate-800/60'}
         ${isUploading ? 'pointer-events-none' : ''}
         backdrop-blur-sm
       `}
     >
+      {/* Animated Rotating Border Effect */}
+      <div className={`absolute inset-0 pointer-events-none opacity-50 ${isDragOver || isUploading ? 'opacity-100' : 'group-hover:opacity-100'}`}>
+          <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                  <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" style={{stopColor:'#06b6d4', stopOpacity:0}} />
+                      <stop offset="50%" style={{stopColor:'#06b6d4', stopOpacity:1}} />
+                      <stop offset="100%" style={{stopColor:'#06b6d4', stopOpacity:0}} />
+                  </linearGradient>
+              </defs>
+              <rect x="2" y="2" width="99%" height="99%" fill="none" stroke="url(#grad1)" strokeWidth="2" strokeDasharray="200, 200" strokeDashoffset="0">
+                  <animate attributeName="stroke-dashoffset" from="400" to="0" dur="4s" repeatCount="indefinite" />
+              </rect>
+          </svg>
+      </div>
+
       {/* Decorative Corners */}
       <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-cyan-500"></div>
       <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-cyan-500"></div>
@@ -110,6 +126,8 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
            <div className="relative w-16 h-16 mb-6">
               <div className="absolute inset-0 border-4 border-slate-700 rounded-full"></div>
               <div className="absolute inset-0 border-4 border-cyan-500 rounded-full border-t-transparent animate-spin"></div>
+              {/* Core Pulse */}
+              <div className="absolute inset-4 bg-cyan-500/20 rounded-full animate-pulse"></div>
            </div>
            <p className="text-lg font-tech tracking-widest text-cyan-400 animate-pulse">{t.uploading}</p>
         </div>

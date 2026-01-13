@@ -1,8 +1,132 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
 import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language, RawPixelFormat } from './types';
+
+// --- Sub-component: Fake Terminal Logs ---
+const TerminalLogs = ({ isProcessing, lang }: { isProcessing: boolean; lang: Language }) => {
+  const [logs, setLogs] = useState<string[]>([]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const logMessages = [
+    "INITIALIZING_CORE...",
+    "LOADING_BUFFER_MEMORY...",
+    "ANALYZING_PIXEL_DENSITY...",
+    "DETECTING_RAW_HEADERS...",
+    "QUANTIZING_COLOR_SPACE...",
+    "APPLYING_MATRIX_TRANSFORM...",
+    "OPTIMIZING_COMPRESSION...",
+    "WRITING_EXIF_DATA...",
+    "FINALIZING_OUTPUT_STREAM...",
+    "CLEANING_TEMP_REGISTERS..."
+  ];
+
+  useEffect(() => {
+    if (isProcessing) {
+      setLogs([]);
+      let index = 0;
+      const interval = setInterval(() => {
+        if (index < logMessages.length) {
+          const prefix = `[${new Date().toLocaleTimeString('en-GB', { hour12: false })}] `;
+          setLogs(prev => [...prev, prefix + logMessages[index]]);
+          index++;
+          // Auto scroll
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        }
+      }, 300 + Math.random() * 200);
+      return () => clearInterval(interval);
+    }
+  }, [isProcessing]);
+
+  if (!isProcessing && logs.length === 0) return null;
+
+  return (
+    <div className="absolute bottom-4 right-4 w-64 h-32 bg-black/80 border border-green-500/50 p-2 font-code text-[10px] text-green-400 overflow-y-auto pointer-events-none z-50 rounded backdrop-blur-md shadow-lg" ref={scrollRef}>
+      {logs.map((log, i) => (
+        <div key={i} className="whitespace-nowrap">> {log}</div>
+      ))}
+      {isProcessing && <div className="animate-pulse">> _</div>}
+    </div>
+  );
+};
+
+// --- Sub-component: Comparison Slider ---
+const CompareSlider = ({ 
+  beforeImage, 
+  afterImage, 
+  onLoad 
+}: { 
+  beforeImage: string, 
+  afterImage: string, 
+  onLoad?: () => void 
+}) => {
+  const [sliderPos, setSliderPos] = useState(50);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+      setSliderPos((x / rect.width) * 100);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+     if (containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const x = Math.max(0, Math.min(e.touches[0].clientX - rect.left, rect.width));
+      setSliderPos((x / rect.width) * 100);
+    }
+  }
+
+  return (
+    <div 
+      ref={containerRef}
+      className="relative w-full h-full max-h-[500px] select-none cursor-col-resize overflow-hidden group"
+      onMouseMove={handleMouseMove}
+      onTouchMove={handleTouchMove}
+    >
+      {/* Background Image (After / Processed) */}
+      <img 
+        src={afterImage} 
+        alt="Processed" 
+        className="w-full h-full object-contain absolute inset-0"
+        onLoad={onLoad}
+      />
+
+      {/* Foreground Image (Before / Original) - Clipped */}
+      <div 
+        className="absolute inset-0 w-full h-full overflow-hidden"
+        style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
+      >
+        <img 
+          src={beforeImage} 
+          alt="Original" 
+          className="w-full h-full object-contain absolute inset-0" 
+        />
+        {/* Label for Before */}
+        <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-1 font-code border border-white/20">SOURCE</div>
+      </div>
+
+      {/* Label for After (positioned right) */}
+      <div className="absolute bottom-2 right-2 bg-cyan-900/50 text-cyan-400 text-[10px] px-2 py-1 font-code border border-cyan-500/20 pointer-events-none">RESULT</div>
+
+      {/* Slider Handle */}
+      <div 
+        className="slider-handle" 
+        style={{ left: `${sliderPos}%` }}
+      >
+        <div className="slider-circle">
+          <svg className="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
+          </svg>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 
 const defaultOptions: ProcessOptions = {
   format: ImageFormat.ORIGINAL,
@@ -267,24 +391,42 @@ function App() {
                     <div className="relative z-10 w-full h-full flex items-center justify-center p-8 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
                       <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-900/5 to-transparent pointer-events-none"></div>
                       
+                      {/* Holographic Scanner Effect (Overlay when processing) */}
+                      {isProcessing && (
+                         <div className="absolute inset-0 z-30 pointer-events-none">
+                            <div className="scanner-overlay"></div>
+                            <div className="scanner-line"></div>
+                         </div>
+                      )}
+
+                      {/* Terminal Logs (Bottom Right Overlay) */}
+                      <TerminalLogs isProcessing={isProcessing} lang={lang} />
+
                       {result ? (
-                         <div className="flex flex-col items-center relative group/img">
-                            <div className="absolute inset-0 border border-green-500/30 scale-105 opacity-0 group-hover/img:opacity-100 transition-opacity"></div>
-                            <img 
-                              src={result.url} 
-                              alt="Processed" 
-                              decoding="async"
-                              className="max-h-[500px] object-contain shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-slate-700" 
-                            />
-                            <div className="mt-4 bg-green-900/30 text-green-400 px-6 py-2 border-l-4 border-green-500 flex items-center backdrop-blur-md">
+                         <div className="flex flex-col items-center relative w-full h-full justify-center">
+                            {/* Comparison Slider or Single Image */}
+                            {!isRawFormat(currentFile.filename) ? (
+                               <CompareSlider 
+                                 beforeImage={currentFile.url} 
+                                 afterImage={result.url} 
+                               />
+                            ) : (
+                               <img 
+                                src={result.url} 
+                                alt="Processed" 
+                                className="max-h-[500px] object-contain shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-slate-700" 
+                               />
+                            )}
+                            
+                            <div className="absolute top-4 left-4 mt-2 bg-green-900/30 text-green-400 px-4 py-1 border-l-2 border-green-500 flex items-center backdrop-blur-md z-40">
                                <svg className="w-4 h-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                               <span className="font-code text-sm tracking-wider uppercase">{t.processedSuccess}</span>
+                               <span className="font-code text-xs tracking-wider uppercase">{t.processedSuccess}</span>
                             </div>
                          </div>
                       ) : (
                         <div className="relative w-full h-full flex items-center justify-center">
                            {isRawFormat(currentFile.filename) ? (
-                              <div className="flex flex-col items-center justify-center p-8 border border-slate-700 bg-slate-900/80 backdrop-blur-sm relative">
+                              <div className="flex flex-col items-center justify-center p-8 border border-slate-700 bg-slate-900/80 backdrop-blur-sm relative z-20">
                                  {/* Glitch Effect on Icon */}
                                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-16 h-16 text-yellow-600 mb-4 opacity-80">
                                     <path strokeLinecap="square" strokeLinejoin="miter" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
@@ -300,7 +442,7 @@ function App() {
                                  src={currentFile.url} 
                                  alt="Original" 
                                  decoding="async"
-                                 className="max-h-[500px] object-contain shadow-2xl border border-slate-700 transition-all duration-300" 
+                                 className="max-h-[500px] object-contain shadow-2xl border border-slate-700 transition-all duration-300 z-20" 
                                  style={{
                                    transform: `rotate(${options.rotate}deg) scaleX(${options.flipX ? -1 : 1}) scaleY(${options.flipY ? -1 : 1})`,
                                    filter: `
@@ -310,7 +452,7 @@ function App() {
                                    `
                                  }} 
                                />
-                               <div className="absolute top-4 right-4 bg-black/70 border border-cyan-500/30 text-cyan-400 text-[10px] font-code px-3 py-1 backdrop-blur-md uppercase tracking-widest">
+                               <div className="absolute top-4 right-4 bg-black/70 border border-cyan-500/30 text-cyan-400 text-[10px] font-code px-3 py-1 backdrop-blur-md uppercase tracking-widest z-20">
                                  ● {t.preview}
                                </div>
                              </>

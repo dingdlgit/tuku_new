@@ -4,7 +4,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>TUKUKU - Cyberpunk Image Node</title>
+    <title>TUKUKU - Holographic Node</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,21 +20,15 @@
       
       body { 
         font-family: 'Rajdhani', sans-serif; 
-        background-color: var(--dark-bg); /* Base background color */
+        background-color: var(--dark-bg);
         color: #e2e8f0;
-        /* Subtle Grid over the background color but under the stars? 
-           Actually, let's put the grid in the body bg, and stars on top. */
-        background-image: 
-          linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
-        background-size: 50px 50px;
-        overflow: hidden; /* Prevent scrollbar on body */
+        overflow: hidden; 
       }
 
       /* Custom Scrollbar */
-      ::-webkit-scrollbar { width: 6px; height: 6px; }
-      ::-webkit-scrollbar-track { background: #0f172a; }
-      ::-webkit-scrollbar-thumb { background: #334155; border-radius: 0px; }
+      ::-webkit-scrollbar { width: 4px; height: 4px; }
+      ::-webkit-scrollbar-track { background: #020617; }
+      ::-webkit-scrollbar-thumb { background: #1e293b; }
       ::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); }
 
       /* CRT Scanline Effect Overlay (Topmost) */
@@ -48,24 +42,47 @@
           to bottom,
           rgba(255,255,255,0),
           rgba(255,255,255,0) 50%,
-          rgba(0,0,0,0.1) 50%,
-          rgba(0,0,0,0.1)
+          rgba(0,0,0,0.05) 50%,
+          rgba(0,0,0,0.05)
         );
         background-size: 100% 4px;
         pointer-events: none;
-        z-index: 50; /* Above everything */
-        opacity: 0.4;
+        z-index: 999; 
+        opacity: 0.6;
       }
 
-      /* Starfield Canvas (Between BG and Content) */
+      /* Starfield Canvas */
       #starfield {
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        z-index: 0; /* Above body background, below root */
+        z-index: 0; 
         pointer-events: none;
+      }
+
+      /* 3D Perspective Floor Grid */
+      .cyber-floor {
+        position: fixed;
+        bottom: -50%;
+        left: -50%;
+        width: 200%;
+        height: 100%;
+        background-image: 
+          linear-gradient(rgba(6, 182, 212, 0.1) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(6, 182, 212, 0.1) 1px, transparent 1px);
+        background-size: 100px 100px;
+        transform: perspective(500px) rotateX(60deg);
+        animation: floor-move 10s linear infinite;
+        z-index: 0;
+        pointer-events: none;
+        mask-image: linear-gradient(to top, rgba(0,0,0,1) 0%, rgba(0,0,0,0) 80%);
+      }
+
+      @keyframes floor-move {
+        0% { transform: perspective(500px) rotateX(60deg) translateY(0); }
+        100% { transform: perspective(500px) rotateX(60deg) translateY(100px); }
       }
       
       /* React Root (Content) */
@@ -74,9 +91,63 @@
         z-index: 10;
       }
 
-      /* Utility Classes for Fonts */
+      /* Utility Classes */
       .font-tech { font-family: 'Orbitron', sans-serif; }
       .font-code { font-family: 'JetBrains Mono', monospace; }
+
+      /* Scanning Laser Effect */
+      .scanner-line {
+        position: absolute;
+        width: 100%;
+        height: 4px;
+        background: #06b6d4;
+        box-shadow: 0 0 10px #06b6d4, 0 0 20px #06b6d4;
+        animation: scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        z-index: 30;
+        opacity: 0.8;
+      }
+      .scanner-overlay {
+        background: linear-gradient(to bottom, rgba(6,182,212,0) 0%, rgba(6,182,212,0.1) 50%, rgba(6,182,212,0) 100%);
+        position: absolute;
+        width: 100%;
+        height: 100px;
+        animation: scan 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+        z-index: 29;
+        transform: translateY(-50px);
+      }
+
+      @keyframes scan {
+        0% { top: 0%; }
+        50% { top: 100%; }
+        100% { top: 0%; }
+      }
+
+      /* Comparison Slider Handle */
+      .slider-handle {
+        width: 4px;
+        height: 100%;
+        background: #06b6d4;
+        box-shadow: 0 0 10px rgba(6,182,212,0.8);
+        position: absolute;
+        top: 0;
+        bottom: 0;
+        cursor: col-resize;
+        z-index: 40;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .slider-circle {
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #020617;
+        border: 2px solid #06b6d4;
+        box-shadow: 0 0 15px rgba(6,182,212,0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
 
       /* Glitch Animation */
       @keyframes glitch {
@@ -124,6 +195,7 @@
 </head>
   <body class="h-full">
     <canvas id="starfield"></canvas>
+    <div class="cyber-floor"></div>
     <div class="scanlines"></div>
     <div id="root" class="h-full flex flex-col"></div>
     <script type="module" src="/index.tsx"></script>
@@ -139,7 +211,7 @@
       
       // Configuration
       const STAR_COUNT = 300;
-      const SHOOTING_STAR_FREQ = 0.01; // Chance per frame
+      const SHOOTING_STAR_FREQ = 0.01; 
       
       const resize = () => {
         width = window.innerWidth;
@@ -150,10 +222,7 @@
       };
       
       class Star {
-        constructor() {
-          this.init();
-        }
-        
+        constructor() { this.init(); }
         init() {
           this.x = Math.random() * width;
           this.y = Math.random() * height;
@@ -163,26 +232,17 @@
           this.speed = Math.random() * 0.05 + 0.01;
           this.twinkleSpeed = Math.random() * 0.02 + 0.005;
           this.twinkleDir = 1;
-          // Color: mostly white, some cyan, some purple
           const rand = Math.random();
           if (rand > 0.9) this.color = "168, 85, 247"; // Purple
           else if (rand > 0.8) this.color = "6, 182, 212"; // Cyan
           else this.color = "255, 255, 255"; // White
         }
-        
         update() {
-          // Slow drift up/left
           this.y -= this.speed;
           if (this.y < 0) this.y = height;
-          
-          // Twinkle
           this.alpha += this.twinkleSpeed * this.twinkleDir;
-          if (this.alpha > this.baseAlpha + 0.2 || this.alpha < this.baseAlpha - 0.2) {
-             this.twinkleDir *= -1;
-          }
-          this.alpha = Math.max(0, Math.min(1, this.alpha));
+          if (this.alpha > this.baseAlpha + 0.2 || this.alpha < this.baseAlpha - 0.2) this.twinkleDir *= -1;
         }
-        
         draw() {
           ctx.fillStyle = `rgba(${this.color}, ${this.alpha})`;
           ctx.beginPath();
@@ -192,84 +252,52 @@
       }
 
       class ShootingStar {
-        constructor() {
-           this.init();
-        }
-
+        constructor() { this.init(); }
         init() {
            this.x = Math.random() * width;
-           this.y = Math.random() * (height / 2); // Start mostly in top half
+           this.y = Math.random() * (height / 2);
            this.length = Math.random() * 80 + 20;
            this.speed = Math.random() * 10 + 5;
-           this.angle = Math.PI / 4; // 45 degrees
+           this.angle = Math.PI / 4;
            this.size = Math.random() * 2 + 0.5;
            this.life = 1.0;
            this.decay = 0.01 + Math.random() * 0.02;
         }
-
         update() {
            this.x -= this.speed * Math.cos(this.angle);
            this.y += this.speed * Math.sin(this.angle);
            this.life -= this.decay;
         }
-
         draw() {
            if (this.life <= 0) return;
-           
            const endX = this.x + this.length * Math.cos(this.angle);
            const endY = this.y - this.length * Math.sin(this.angle);
-
-           // Gradient trail
            const grad = ctx.createLinearGradient(this.x, this.y, endX, endY);
-           grad.addColorStop(0, `rgba(6, 182, 212, ${this.life})`); // Head (Cyan)
-           grad.addColorStop(1, `rgba(6, 182, 212, 0)`); // Tail
-
+           grad.addColorStop(0, `rgba(6, 182, 212, ${this.life})`);
+           grad.addColorStop(1, `rgba(6, 182, 212, 0)`);
            ctx.strokeStyle = grad;
            ctx.lineWidth = this.size;
            ctx.beginPath();
            ctx.moveTo(this.x, this.y);
            ctx.lineTo(endX, endY);
            ctx.stroke();
-           
-           // Glow head
-           ctx.fillStyle = `rgba(255, 255, 255, ${this.life})`;
-           ctx.beginPath();
-           ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-           ctx.fill();
         }
       }
       
       const initStars = () => {
         stars = [];
-        for (let i = 0; i < STAR_COUNT; i++) {
-          stars.push(new Star());
-        }
+        for (let i = 0; i < STAR_COUNT; i++) stars.push(new Star());
       };
       
       const animate = () => {
         ctx.clearRect(0, 0, width, height);
-        
-        // Stars
-        stars.forEach(star => {
-          star.update();
-          star.draw();
-        });
-
-        // Chance to spawn shooting star
-        if (Math.random() < SHOOTING_STAR_FREQ) {
-           shootingStars.push(new ShootingStar());
-        }
-
-        // Shooting Stars
+        stars.forEach(star => { star.update(); star.draw(); });
+        if (Math.random() < SHOOTING_STAR_FREQ) shootingStars.push(new ShootingStar());
         for (let i = shootingStars.length - 1; i >= 0; i--) {
            const s = shootingStars[i];
-           s.update();
-           s.draw();
-           if (s.life <= 0 || s.x < -100 || s.y > height + 100) {
-              shootingStars.splice(i, 1);
-           }
+           s.update(); s.draw();
+           if (s.life <= 0 || s.x < -100 || s.y > height + 100) shootingStars.splice(i, 1);
         }
-        
         requestAnimationFrame(animate);
       };
       
