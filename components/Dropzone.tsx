@@ -15,15 +15,17 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
   const t = {
     en: {
       uploading: "UPLOADING DATA STREAM...",
-      mainText: "INITIATE UPLOAD SEQUENCE",
-      subText: "JPG, PNG, WEBP, BMP, RAW (UYVY, NV21, RGB, BGR, RGBA...) // MAX 20MB",
+      mainText: "UPLOAD",
+      formats: "JPG, PNG, WEBP, BMP, RAW (UYVY, NV21, RGBA...)",
+      limit: "MAX 20MB",
       formatError: "ERROR: INVALID FILE FORMAT",
       sizeError: "ERROR: FILE SIZE EXCEEDS 20MB LIMIT"
     },
     zh: {
       uploading: "数据流上传中...",
-      mainText: "启动上传序列",
-      subText: "支持 JPG, PNG, BMP, RAW (UYVY, NV21, RGB, BGR, RGBA...) // 最大 20MB",
+      mainText: "上传",
+      formats: "支持 JPG, PNG, BMP, RAW (UYVY, NV21, RGBA...)",
+      limit: "最大 20MB",
       formatError: "错误：不支持的文件格式",
       sizeError: "错误：文件大小超过 20MB 限制"
     }
@@ -118,8 +120,16 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
               <path strokeLinecap="square" strokeLinejoin="miter" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
             </svg>
           </div>
-          <p className="text-2xl font-bold text-white mb-2 font-tech tracking-widest">{t.mainText}</p>
-          <p className="text-xs text-slate-400 max-w-sm text-center font-code uppercase tracking-wider">{t.subText}</p>
+          <p className="text-3xl font-bold text-white mb-3 font-tech tracking-[0.2em]">{t.mainText}</p>
+          
+          <div className="flex flex-col items-center gap-1">
+            <p className="text-xs text-slate-400 max-w-sm text-center font-code uppercase tracking-wider">
+              {t.formats}
+            </p>
+            <p className="text-[10px] text-cyan-600 font-code font-bold border border-cyan-900/50 px-2 py-0.5 rounded bg-cyan-900/10">
+              {t.limit}
+            </p>
+          </div>
         </div>
       )}
     </div>
