@@ -172,12 +172,16 @@ function nv21ToRgba(buffer, width, height) {
 async function getSharpInstance(filePath, rawOptions = {}) {
   const ext = path.extname(filePath).toLowerCase();
   
-  // Detect if we need to perform RAW processing
-  // Trigger if specific extension OR if manual dimensions provided
-  const explicitRaw = !!(rawOptions.width && rawOptions.height && rawOptions.pixelFormat);
-  const implicitRaw = ['.uyvy', '.yuv', '.nv21', '.rgb'].includes(ext);
+  // FIX: Explicitly exclude standard formats from RAW processing
+  // This prevents standard JPGs from being read as raw bytes if options are accidentally passed
+  const STANDARD_FORMATS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.tiff', '.tif', '.svg'];
+  const isStandard = STANDARD_FORMATS.includes(ext);
 
-  if (explicitRaw || implicitRaw) {
+  // Detect if we need to perform RAW processing
+  const explicitRaw = !isStandard && !!(rawOptions.width && rawOptions.height && rawOptions.pixelFormat);
+  const implicitRaw = ['.uyvy', '.yuv', '.nv21', '.rgb', '.rgba', '.bgra', '.bgr', '.bin', '.raw'].includes(ext);
+
+  if (!isStandard && (explicitRaw || implicitRaw)) {
     const stats = fs.statSync(filePath);
     const size = stats.size;
     let width, height;
@@ -218,11 +222,12 @@ async function getSharpInstance(filePath, rawOptions = {}) {
               rgbaBuffer = nv21ToRgba(buffer, width, height);
               break;
           case 'rgba':
-              // Sharp can handle raw RGBA, but we pass buffer directly
-              rgbaBuffer = buffer; 
-              break;
+              // Sharp can handle raw RGBA (4 channels)
+              return sharp(buffer, {
+                  raw: { width, height, channels: 4 }
+              }).toColorspace('srgb');
           case 'bgra':
-              // Swap B and R channels
+              // Swap B and R channels for 4-channel BGRA -> RGBA
               rgbaBuffer = Buffer.from(buffer);
               for (let i = 0; i < rgbaBuffer.length; i += 4) {
                   const b = rgbaBuffer[i];
@@ -232,10 +237,7 @@ async function getSharpInstance(filePath, rawOptions = {}) {
               }
               break;
           case 'rgb':
-              // 3 channels -> Sharp supports this natively, 
-              // but we need to pass a 3-channel config to Sharp if we return here.
-              // To unify pipeline, we can keep it as is and let sharp handle it below,
-              // OR convert to RGBA manually. Sharp raw is faster.
+              // Sharp handles 3 channel raw
               return sharp(buffer, {
                   raw: { width, height, channels: 3 }
               }).toColorspace('srgb');
@@ -257,6 +259,7 @@ async function getSharpInstance(filePath, rawOptions = {}) {
               break;
       }
       
+      // For cases where we manually created an RGBA buffer (UYVY, NV21, BGRA)
       return sharp(rgbaBuffer, {
         raw: {
           width: width,
@@ -274,31 +277,22 @@ async function getSharpInstance(filePath, rawOptions = {}) {
       const buffer = fs.readFileSync(filePath);
       const bitmap = bmp.decode(buffer);
       const rawData = bitmap.data; 
-      // bmp-js output is ALWAYS formatted as ABGR (Alpha, Blue, Green, Red)
-      // For 24-bit inputs, it auto-pads to 32-bit but sets Alpha to 0.
-
+      
       const len = rawData.length;
       const width = bitmap.width;
       const height = bitmap.height;
       const rgba = Buffer.alloc(len);
       
-      // 1. Detect if image is effectively opaque (24-bit or 32-bit without transparency)
-      // Check a subset of pixels to see if Alpha is consistently 0
+      // Detect if image is effectively opaque (24-bit or 32-bit without transparency)
       let maxAlpha = 0;
       for (let i = 0; i < len; i += 4) {
            if (rawData[i] > maxAlpha) {
                maxAlpha = rawData[i];
            }
       }
-      
-      // If maxAlpha is 0, it means it's likely a 24-bit image (where bmp-js filled A=0)
-      // In this case, we MUST force alpha to 255, otherwise it shows as transparent/black.
       const forceOpaque = (maxAlpha === 0);
-      if (forceOpaque) console.log("Detected 24-bit BMP (Alpha=0), forcing opacity.");
 
-      // 2. Map ABGR -> RGBA
-      // bmp-js Buffer Layout: [A, B, G, R, A, B, G, R ...]
-      // Sharp expects:        [R, G, B, A, R, G, B, A ...]
+      // Map ABGR -> RGBA
       for (let i = 0; i < len; i += 4) {
         const a = rawData[i];
         const b = rawData[i + 1];
@@ -317,7 +311,6 @@ async function getSharpInstance(filePath, rawOptions = {}) {
 
     } catch (bmpError) { 
       console.error("BMP Manual Decode Error:", bmpError);
-      // Fallback: Try sharp native, but likely will fail if bmp-js failed
     }
   }
 
@@ -381,10 +374,11 @@ app.post('/api/process', async (req, res) => {
   let format = options.format;
   if (format === 'original') {
     format = path.extname(originalFile).slice(1).toLowerCase();
-    if (['uyvy', 'yuv', 'nv21', 'rgb'].includes(format)) format = 'png';
+    // Map raw extensions to default png output
+    if (['uyvy', 'yuv', 'nv21', 'rgb', 'raw', 'bin', 'bgra', 'rgba'].includes(format)) format = 'png';
   }
   if (format === 'jpg') format = 'jpeg';
-  if (['uyvy', 'yuv', 'nv21', 'rgb'].includes(format)) format = 'png';
+  if (['uyvy', 'yuv', 'nv21', 'rgb', 'raw', 'bin', 'bgra', 'rgba'].includes(format)) format = 'png';
 
   const outputFilename = `tuku_${id}_${Date.now()}.${format}`;
   const outputPath = path.join(PROCESSED_DIR, outputFilename);
@@ -402,8 +396,6 @@ app.post('/api/process', async (req, res) => {
     const metadata = await instance.metadata();
     
     let pipeline = instance.clone();
-    
-    // Force alpha channel for consistency
     pipeline = pipeline.ensureAlpha(); 
 
     let currentWidth = metadata.width;
@@ -475,18 +467,12 @@ app.post('/api/process', async (req, res) => {
 
     // 5. Output Generation
     if (format === 'bmp') {
-        // Sharp cannot write BMP natively in standard builds, use bmp-js.
-        // Get raw RGBA buffer from Sharp (Sharp is always RGBA internally)
         const { data: buffer, info } = await pipeline
           .toColorspace('srgb')
           .raw()
           .toBuffer({ resolveWithObject: true });
 
-        // Convert RGBA -> ABGR for bmp-js encoding
-        // Sharp Buffer: [R, G, B, A, R, G, B, A...]
-        // bmp-js Expects: Buffer where encode() maps [i+1]->B, [i+2]->G, [i+3]->R, [i]->A
-        // So we must construct input buffer as: [A, B, G, R]
-        
+        // Convert RGBA -> ABGR for bmp-js
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
           const r = buffer[i];
@@ -494,10 +480,10 @@ app.post('/api/process', async (req, res) => {
           const b = buffer[i + 2];
           const a = buffer[i + 3];
 
-          abgrBuffer[i]     = a; // Alpha (Byte 0)
-          abgrBuffer[i + 1] = b; // Blue  (Byte 1)
-          abgrBuffer[i + 2] = g; // Green (Byte 2)
-          abgrBuffer[i + 3] = r; // Red   (Byte 3)
+          abgrBuffer[i]     = a; 
+          abgrBuffer[i + 1] = b; 
+          abgrBuffer[i + 2] = g; 
+          abgrBuffer[i + 3] = r; 
         }
 
         const rawData = {
