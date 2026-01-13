@@ -14,18 +14,18 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
 
   const t = {
     en: {
-      uploading: "UPLOADING DATA STREAM...",
-      mainText: "INITIALIZE UPLOAD",
-      subText: "SUPPORTED PROTOCOLS: JPG, PNG, WEBP, BMP, RAW (UYVY, NV21, RGB...)",
-      formatError: "PROTOCOL MISMATCH: Format not supported.",
-      sizeError: "MEMORY OVERFLOW: Max size is 20MB."
+      uploading: "Uploading...",
+      mainText: "Click to Upload or Drag & Drop",
+      subText: "JPG, PNG, WEBP, BMP, RAW (UYVY, NV21, RGB...) up to 20MB",
+      formatError: "Format not supported.",
+      sizeError: "File too large. Max size is 20MB."
     },
     zh: {
-      uploading: "数据流上传中...",
-      mainText: "初始化上传序列",
-      subText: "支持协议: JPG, PNG, BMP, RAW (UYVY, NV21, RGB...) (Max 20MB)",
-      formatError: "协议不匹配：不支持该格式。",
-      sizeError: "内存溢出：最大允许 20MB。"
+      uploading: "正在上传...",
+      mainText: "点击上传或拖拽图片到此处",
+      subText: "支持 JPG, PNG, BMP, RAW (UYVY, NV21, RGB...) (最大 20MB)",
+      formatError: "不支持该格式。",
+      sizeError: "文件过大。最大允许 20MB。"
     }
   }[lang];
 
@@ -54,13 +54,17 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
   };
 
   const validateAndUpload = (file: File) => {
+    // Relaxed validation: Check extensions for specific formats that might have generic/missing MIME types
     const validExtensions = [
       '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.heic', 
       '.uyvy', '.yuv', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.nv21', '.bin'
     ];
     
     const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
+    
+    // Check extension
     const isValidExt = validExtensions.includes(fileExt);
+    // Basic image mime types
     const isImageMime = file.type.startsWith('image/');
 
     if (!isValidExt && !isImageMime) {
@@ -81,56 +85,41 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={`
-        relative w-full h-72 border border-dashed rounded-none flex flex-col items-center justify-center cursor-pointer transition-all duration-300 overflow-hidden group
+        w-full h-64 border-2 border-dashed rounded-2xl flex flex-col items-center justify-center cursor-pointer transition-all duration-300
         ${isDragOver 
-          ? 'border-cyan-400 bg-cyan-900/20 shadow-[0_0_30px_rgba(6,182,212,0.3)]' 
-          : 'border-slate-600 bg-slate-900/50 hover:border-cyan-500 hover:bg-slate-900/80'}
-        ${isUploading ? 'opacity-80 pointer-events-none' : ''}
+          ? 'border-indigo-500 bg-indigo-50 scale-[1.02]' 
+          : 'border-slate-300 bg-white hover:border-indigo-400 hover:bg-slate-50'}
+        ${isUploading ? 'opacity-50 pointer-events-none' : ''}
       `}
-      style={{ clipPath: "polygon(0 0, 100% 0, 100% calc(100% - 20px), calc(100% - 20px) 100%, 0 100%)" }}
     >
-      {/* Scanning Line Animation */}
-      <div className={`absolute top-0 left-0 w-full h-1 bg-cyan-500/50 shadow-[0_0_15px_#06b6d4] transition-all duration-1000 ${isUploading ? 'animate-[scan_1.5s_ease-in-out_infinite]' : 'opacity-0 group-hover:opacity-100 animate-[scan_3s_ease-in-out_infinite]'}`}></div>
-
       <input 
         type="file" 
         ref={fileInputRef} 
         onChange={handleChange} 
         className="hidden" 
+        // Accept common images + raw extensions
         accept="image/*,.uyvy,.yuv,.raw,.rgb,.bgr,.bin,.nv21"
       />
       
       {isUploading ? (
-        <div className="flex flex-col items-center z-10">
-           {/* Tech Spinner */}
-           <div className="relative w-16 h-16 mb-4">
-              <div className="absolute w-full h-full border-4 border-slate-700 rounded-full"></div>
-              <div className="absolute w-full h-full border-t-4 border-cyan-500 rounded-full animate-spin"></div>
-              <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 text-cyan-500 text-xs font-code animate-pulse">LOAD</div>
-           </div>
-           <p className="text-lg font-tech tracking-wider text-cyan-400 animate-pulse">{t.uploading}</p>
+        <div className="flex flex-col items-center animate-pulse">
+           <svg className="animate-spin h-10 w-10 text-indigo-500 mb-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+           <p className="text-lg font-medium text-slate-600">{t.uploading}</p>
         </div>
       ) : (
         <>
-          <div className="relative mb-6 group-hover:scale-110 transition-transform duration-300">
-            <div className="absolute -inset-4 bg-cyan-500/20 rounded-full blur-xl group-hover:bg-cyan-500/40 transition-all"></div>
-            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-16 h-16 text-cyan-400 relative z-10">
-              <path strokeLinecap="square" strokeLinejoin="miter" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+          <div className="bg-indigo-100 p-4 rounded-full mb-4">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-indigo-600">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
             </svg>
           </div>
-          <p className="text-2xl font-tech font-bold text-slate-200 group-hover:text-cyan-300 transition-colors mb-2 tracking-wide uppercase">{t.mainText}</p>
-          <div className="flex items-center gap-2">
-            <span className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></span>
-            <p className="text-xs font-code text-slate-400 group-hover:text-cyan-200/70 uppercase tracking-tight">{t.subText}</p>
-          </div>
+          <p className="text-xl font-semibold text-slate-700 mb-2">{t.mainText}</p>
+          <p className="text-sm text-slate-500">{t.subText}</p>
         </>
       )}
-      
-      {/* Decorative Corners */}
-      <div className="absolute top-0 left-0 w-4 h-4 border-t-2 border-l-2 border-cyan-600/50"></div>
-      <div className="absolute top-0 right-0 w-4 h-4 border-t-2 border-r-2 border-cyan-600/50"></div>
-      <div className="absolute bottom-0 left-0 w-4 h-4 border-b-2 border-l-2 border-cyan-600/50"></div>
-      <div className="absolute bottom-0 right-0 w-20 h-20 border-b-0 border-r-0 bg-gradient-to-tl from-slate-800/50 to-transparent pointer-events-none" style={{ clipPath: "polygon(100% 0, 100% 100%, 0 100%)"}}></div>
     </div>
   );
 };

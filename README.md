@@ -1,5 +1,4 @@
-
-# 图酷酷 (TUKUKU) - Online Image Processor
+# 图酷 (TuKu) - Online Image Processor
 
 ## 📁 Project Structure
 
