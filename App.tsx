@@ -189,14 +189,9 @@ function App() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#020617] text-slate-300 font-sans selection:bg-cyan-500/30 selection:text-cyan-100">
-      {/* Decorative Grid Background */}
-      <div className="fixed inset-0 pointer-events-none" style={{
-        backgroundImage: 'linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px)',
-        backgroundSize: '40px 40px',
-        zIndex: 0
-      }}></div>
-
+    /* Removed bg-[#020617] to let starfield show through. Added bg-transparent/0. */
+    <div className="flex flex-col h-full bg-transparent text-slate-300 font-sans selection:bg-cyan-500/30 selection:text-cyan-100">
+      
       {/* Header */}
       <header className="border-b border-cyan-900/50 bg-[#020617]/90 backdrop-blur-md py-4 px-6 shadow-[0_0_20px_rgba(6,182,212,0.1)] relative z-20">
         <div className="max-w-7xl mx-auto flex justify-between items-center">

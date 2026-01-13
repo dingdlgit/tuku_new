@@ -1,6 +1,6 @@
 
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -16,19 +16,19 @@
         --neon-cyan: #06b6d4;
         --neon-purple: #a855f7;
         --dark-bg: #020617;
-        --panel-bg: rgba(15, 23, 42, 0.6);
       }
       
       body { 
         font-family: 'Rajdhani', sans-serif; 
-        background-color: var(--dark-bg);
+        background-color: var(--dark-bg); /* Base background color */
         color: #e2e8f0;
-        /* Keep grid but make it subtle to overlay on stars */
+        /* Subtle Grid over the background color but under the stars? 
+           Actually, let's put the grid in the body bg, and stars on top. */
         background-image: 
           linear-gradient(rgba(6, 182, 212, 0.03) 1px, transparent 1px),
           linear-gradient(90deg, rgba(6, 182, 212, 0.03) 1px, transparent 1px);
         background-size: 50px 50px;
-        overflow: hidden; /* Prevent scrollbar flickers from canvas */
+        overflow: hidden; /* Prevent scrollbar on body */
       }
 
       /* Custom Scrollbar */
@@ -37,7 +37,7 @@
       ::-webkit-scrollbar-thumb { background: #334155; border-radius: 0px; }
       ::-webkit-scrollbar-thumb:hover { background: var(--neon-cyan); }
 
-      /* CRT Scanline Effect Overlay */
+      /* CRT Scanline Effect Overlay (Topmost) */
       .scanlines {
         position: fixed;
         top: 0;
@@ -53,19 +53,25 @@
         );
         background-size: 100% 4px;
         pointer-events: none;
-        z-index: 9999;
+        z-index: 50; /* Above everything */
         opacity: 0.4;
       }
 
-      /* Starfield Canvas */
+      /* Starfield Canvas (Between BG and Content) */
       #starfield {
         position: fixed;
         top: 0;
         left: 0;
         width: 100%;
         height: 100%;
-        z-index: -1; /* Behind everything */
+        z-index: 0; /* Above body background, below root */
         pointer-events: none;
+      }
+      
+      /* React Root (Content) */
+      #root {
+        position: relative;
+        z-index: 10;
       }
 
       /* Utility Classes for Fonts */
@@ -116,10 +122,10 @@
 }
 </script>
 </head>
-  <body>
+  <body class="h-full">
     <canvas id="starfield"></canvas>
     <div class="scanlines"></div>
-    <div id="root" class="h-full flex flex-col relative z-10"></div>
+    <div id="root" class="h-full flex flex-col"></div>
     <script type="module" src="/index.tsx"></script>
     
     <!-- Starfield Effect Script -->
