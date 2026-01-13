@@ -51,83 +51,6 @@ const TerminalLogs = ({ isProcessing, lang }: { isProcessing: boolean; lang: Lan
   );
 };
 
-// --- Sub-component: Comparison Slider ---
-const CompareSlider = ({ 
-  beforeImage, 
-  afterImage, 
-  onLoad 
-}: { 
-  beforeImage: string, 
-  afterImage: string, 
-  onLoad?: () => void 
-}) => {
-  const [sliderPos, setSliderPos] = useState(50);
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
-      setSliderPos((x / rect.width) * 100);
-    }
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-     if (containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const x = Math.max(0, Math.min(e.touches[0].clientX - rect.left, rect.width));
-      setSliderPos((x / rect.width) * 100);
-    }
-  }
-
-  return (
-    <div 
-      ref={containerRef}
-      className="relative w-full h-full max-h-[500px] select-none cursor-col-resize overflow-hidden group"
-      onMouseMove={handleMouseMove}
-      onTouchMove={handleTouchMove}
-    >
-      {/* Background Image (After / Processed) */}
-      <img 
-        src={afterImage} 
-        alt="Processed" 
-        className="w-full h-full object-contain absolute inset-0"
-        onLoad={onLoad}
-      />
-
-      {/* Foreground Image (Before / Original) - Clipped */}
-      <div 
-        className="absolute inset-0 w-full h-full overflow-hidden"
-        style={{ clipPath: `inset(0 ${100 - sliderPos}% 0 0)` }}
-      >
-        <img 
-          src={beforeImage} 
-          alt="Original" 
-          className="w-full h-full object-contain absolute inset-0" 
-        />
-        {/* Label for Before */}
-        <div className="absolute bottom-2 left-2 bg-black/50 text-white text-[10px] px-2 py-1 font-code border border-white/20">SOURCE</div>
-      </div>
-
-      {/* Label for After (positioned right) */}
-      <div className="absolute bottom-2 right-2 bg-cyan-900/50 text-cyan-400 text-[10px] px-2 py-1 font-code border border-cyan-500/20 pointer-events-none">RESULT</div>
-
-      {/* Slider Handle */}
-      <div 
-        className="slider-handle" 
-        style={{ left: `${sliderPos}%` }}
-      >
-        <div className="slider-circle">
-          <svg className="w-4 h-4 text-cyan-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l4-4 4 4m0 6l-4 4-4-4" />
-          </svg>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-
 const defaultOptions: ProcessOptions = {
   format: ImageFormat.ORIGINAL,
   quality: 85,
@@ -404,19 +327,12 @@ function App() {
 
                       {result ? (
                          <div className="flex flex-col items-center relative w-full h-full justify-center">
-                            {/* Comparison Slider or Single Image */}
-                            {!isRawFormat(currentFile.filename) ? (
-                               <CompareSlider 
-                                 beforeImage={currentFile.url} 
-                                 afterImage={result.url} 
-                               />
-                            ) : (
-                               <img 
-                                src={result.url} 
-                                alt="Processed" 
-                                className="max-h-[500px] object-contain shadow-[0_0_30px_rgba(0,0,0,0.5)] border border-slate-700" 
-                               />
-                            )}
+                            {/* Standard Result Display */}
+                            <img 
+                              src={result.url} 
+                              alt="Processed" 
+                              className="max-h-[500px] w-full object-contain shadow-[0_0_30px_rgba(6,182,212,0.15)] border border-slate-700" 
+                            />
                             
                             <div className="absolute top-4 left-4 mt-2 bg-green-900/30 text-green-400 px-4 py-1 border-l-2 border-green-500 flex items-center backdrop-blur-md z-40">
                                <svg className="w-4 h-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
