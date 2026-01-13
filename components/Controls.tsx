@@ -24,41 +24,41 @@ export const Controls: React.FC<ControlsProps> = ({
   
   const t = {
     en: {
-      settings: "Settings",
-      sourceSettings: "Raw Data Settings",
-      sourceDesc: "Required: Specify format & size for this RAW file.",
-      format: "Output Format",
-      pixelFormat: "Pixel Format",
-      quality: "Quality",
-      resize: "Resize",
-      maintainAspect: "Maintain Aspect Ratio",
-      transform: "Transform",
-      filters: "Filters",
-      grayscale: "Grayscale",
-      sharpen: "Sharpen",
-      blur: "Blur",
-      watermark: "Watermark",
-      watermarkPlaceholder: "Enter text...",
-      processBtn: "Process Image",
-      processing: "Processing..."
+      settings: "SYSTEM_CONFIG",
+      sourceSettings: "RAW_DATA_INPUT",
+      sourceDesc: "Required: Specify format & dimensions.",
+      format: "OUTPUT_FORMAT",
+      pixelFormat: "PIXEL_FORMAT",
+      quality: "COMPRESSION",
+      resize: "DIMENSIONS",
+      maintainAspect: "LOCK_ASPECT",
+      transform: "TRANSFORM",
+      filters: "FILTERS",
+      grayscale: "GRAYSCALE",
+      sharpen: "SHARPEN",
+      blur: "GAUSSIAN_BLUR",
+      watermark: "WATERMARK",
+      watermarkPlaceholder: "TEXT_DATA...",
+      processBtn: "EXECUTE_PROCESS",
+      processing: "PROCESSING..."
     },
     zh: {
-      settings: "设置",
-      sourceSettings: "Raw 数据源设置",
-      sourceDesc: "必填：指定该 RAW 文件的像素格式与尺寸。",
+      settings: "系统配置",
+      sourceSettings: "RAW 数据源",
+      sourceDesc: "必填：指定格式与尺寸",
       format: "输出格式",
       pixelFormat: "像素格式",
-      quality: "画质质量",
-      resize: "调整尺寸",
-      maintainAspect: "保持长宽比",
-      transform: "旋转与翻转",
-      filters: "滤镜效果",
-      grayscale: "黑白 (灰度)",
-      sharpen: "锐化",
-      blur: "模糊",
-      watermark: "添加水印",
-      watermarkPlaceholder: "输入水印文字...",
-      processBtn: "开始处理",
+      quality: "压缩质量",
+      resize: "尺寸调整",
+      maintainAspect: "锁定比例",
+      transform: "变换控制",
+      filters: "图像滤镜",
+      grayscale: "灰度模式",
+      sharpen: "锐化增强",
+      blur: "高斯模糊",
+      watermark: "水印叠加",
+      watermarkPlaceholder: "输入文本...",
+      processBtn: "执行处理",
       processing: "处理中..."
     }
   }[lang];
@@ -67,38 +67,41 @@ export const Controls: React.FC<ControlsProps> = ({
     setOptions(prev => ({ ...prev, [key]: value }));
   };
 
-  // Helper to detect if we need to show RAW controls
-  // Checks extension of original file passed in
   const isRaw = inputFormat && (
       ['.uyvy', '.yuv', '.nv21', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.bin'].some(ext => inputFormat.toLowerCase().endsWith(ext))
   );
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
-      <div className="p-4 border-b border-slate-100 bg-slate-50">
-        <h2 className="font-semibold text-slate-800 flex items-center">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-5 h-5 mr-2 text-indigo-600">
-            <path d="M10 3.75a2 2 0 10-4 0 2 2 0 004 0zM17.25 4.5a.75.75 0 00-1.5 0h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 001.5 0zm-14.5 0a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5zM10 8.5a2 2 0 10-4 0 2 2 0 004 0zM17.25 9.25a.75.75 0 00-1.5 0h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 001.5 0zm-14.5 0a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5zM10 13.25a2 2 0 10-4 0 2 2 0 004 0zM17.25 14a.75.75 0 00-1.5 0h-2.5a.75.75 0 000 1.5h2.5a.75.75 0 001.5 0zm-14.5 0a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5h-2.5z" />
-          </svg>
+    <div className="bg-slate-900/80 backdrop-blur-md rounded-none border border-cyan-900/50 flex flex-col h-full overflow-hidden relative">
+      {/* Header Accent */}
+      <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-600 to-transparent"></div>
+
+      <div className="p-4 border-b border-cyan-900/30 bg-slate-900/50 flex justify-between items-center">
+        <h2 className="font-tech font-bold text-cyan-400 tracking-wider flex items-center">
+          <span className="w-2 h-2 bg-cyan-500 mr-3 animate-pulse"></span>
           {t.settings}
         </h2>
+        <div className="flex gap-1">
+           <div className="w-1 h-1 bg-slate-600"></div>
+           <div className="w-1 h-1 bg-slate-600"></div>
+           <div className="w-1 h-1 bg-slate-600"></div>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-4 space-y-6">
+      <div className="flex-1 overflow-y-auto p-5 space-y-8 custom-scrollbar">
         
-        {/* RAW Format Specific Settings - Shown ONLY for Raw files */}
+        {/* RAW Format Specific Settings */}
         {isRaw && (
-          <section className="bg-amber-50 p-3 rounded-lg border border-amber-200 shadow-sm">
-             <label className="block text-sm font-bold text-amber-800 mb-1">{t.sourceSettings}</label>
-             <p className="text-xs text-amber-700 mb-3">{t.sourceDesc}</p>
+          <section className="bg-amber-900/20 p-4 border-l-2 border-amber-500">
+             <label className="block text-xs font-bold text-amber-500 mb-1 font-tech tracking-wider">{t.sourceSettings}</label>
+             <p className="text-[10px] text-amber-400/70 mb-4 font-code">{t.sourceDesc}</p>
              
-             {/* Pixel Format Selector */}
-             <div className="mb-3">
-               <label className="block text-xs font-semibold text-amber-800 mb-1">{t.pixelFormat}</label>
+             <div className="mb-4">
+               <label className="block text-[10px] font-semibold text-slate-400 mb-1 font-code">{t.pixelFormat}</label>
                <select
                  value={options.rawPixelFormat || 'uyvy'}
                  onChange={(e) => updateOption('rawPixelFormat', e.target.value as RawPixelFormat)}
-                 className="w-full px-2 py-1.5 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white"
+                 className="w-full bg-black/40 border border-amber-500/30 text-amber-100 text-xs py-2 px-3 focus:outline-none focus:border-amber-500 font-code uppercase"
                >
                  <option value="uyvy">UYVY (YUV 4:2:2)</option>
                  <option value="nv21">NV21 (YUV 4:2:0)</option>
@@ -116,38 +119,38 @@ export const Controls: React.FC<ControlsProps> = ({
                     placeholder="W"
                     value={options.rawWidth || ''}
                     onChange={(e) => updateOption('rawWidth', e.target.value ? Number(e.target.value) : undefined)}
-                    className="w-full pl-3 pr-8 py-2 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white"
+                    className="w-full bg-black/40 border border-amber-500/30 text-amber-100 text-xs py-2 px-3 pl-3 pr-8 focus:outline-none focus:border-amber-500 font-code"
                   />
-                  <span className="absolute right-3 top-2 text-xs text-slate-400">px</span>
+                  <span className="absolute right-3 top-2 text-[10px] text-slate-500">px</span>
                 </div>
-                <span className="text-slate-400">×</span>
+                <span className="text-slate-600">×</span>
                 <div className="relative w-full">
                   <input
                     type="number"
                     placeholder="H"
                     value={options.rawHeight || ''}
                     onChange={(e) => updateOption('rawHeight', e.target.value ? Number(e.target.value) : undefined)}
-                    className="w-full pl-3 pr-8 py-2 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white"
+                    className="w-full bg-black/40 border border-amber-500/30 text-amber-100 text-xs py-2 px-3 pl-3 pr-8 focus:outline-none focus:border-amber-500 font-code"
                   />
-                  <span className="absolute right-3 top-2 text-xs text-slate-400">px</span>
+                  <span className="absolute right-3 top-2 text-[10px] text-slate-500">px</span>
                 </div>
               </div>
           </section>
         )}
 
-        {/* Format & Quality */}
+        {/* Format */}
         <section>
-          <label className="block text-sm font-medium text-slate-700 mb-2">{t.format}</label>
+          <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.format}</label>
           <div className="grid grid-cols-3 gap-2">
             {[ImageFormat.ORIGINAL, ImageFormat.JPEG, ImageFormat.PNG, ImageFormat.WEBP, ImageFormat.BMP].map(fmt => (
               <button
                 key={fmt}
                 onClick={() => updateOption('format', fmt)}
-                className={`px-3 py-2 text-sm rounded-md border uppercase ${
-                  options.format === fmt 
-                    ? 'bg-indigo-600 text-white border-indigo-600' 
-                    : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'
-                }`}
+                className={`px-2 py-2 text-[10px] border font-code uppercase transition-all
+                  ${options.format === fmt 
+                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.2)]' 
+                    : 'bg-transparent border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'
+                  }`}
               >
                 {fmt === 'original' ? 'ORIG' : fmt}
               </button>
@@ -158,8 +161,8 @@ export const Controls: React.FC<ControlsProps> = ({
         {options.format !== ImageFormat.PNG && options.format !== ImageFormat.BMP && (
           <section>
             <div className="flex justify-between mb-2">
-              <label className="text-sm font-medium text-slate-700">{t.quality}</label>
-              <span className="text-sm text-slate-500">{options.quality}%</span>
+              <label className="text-xs font-bold text-cyan-500 font-tech tracking-wider uppercase">{t.quality}</label>
+              <span className="text-xs font-code text-cyan-300">{options.quality}%</span>
             </div>
             <input
               type="range"
@@ -167,14 +170,14 @@ export const Controls: React.FC<ControlsProps> = ({
               max="100"
               value={options.quality}
               onChange={(e) => updateOption('quality', Number(e.target.value))}
-              className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+              className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
             />
           </section>
         )}
 
         {/* Dimensions */}
         <section>
-          <label className="block text-sm font-medium text-slate-700 mb-2">{t.resize}</label>
+          <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.resize}</label>
           <div className="flex gap-2 items-center mb-3">
             <div className="relative w-full">
               <input
@@ -182,20 +185,20 @@ export const Controls: React.FC<ControlsProps> = ({
                 placeholder={originalDimensions?.width ? originalDimensions.width.toString() : 'Width'}
                 value={options.width || ''}
                 onChange={(e) => updateOption('width', e.target.value ? Number(e.target.value) : null)}
-                className="w-full pl-3 pr-8 py-2 text-sm border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600"
               />
-              <span className="absolute right-3 top-2 text-xs text-slate-400">px</span>
+              <span className="absolute right-3 top-2 text-[10px] text-slate-600">W</span>
             </div>
-            <span className="text-slate-400">×</span>
+            <span className="text-slate-600 text-xs">×</span>
             <div className="relative w-full">
               <input
                 type="number"
                 placeholder={originalDimensions?.height ? originalDimensions.height.toString() : 'Height'}
                 value={options.height || ''}
                 onChange={(e) => updateOption('height', e.target.value ? Number(e.target.value) : null)}
-                className="w-full pl-3 pr-8 py-2 text-sm border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600"
               />
-              <span className="absolute right-3 top-2 text-xs text-slate-400">px</span>
+              <span className="absolute right-3 top-2 text-[10px] text-slate-600">H</span>
             </div>
           </div>
           <div className="flex items-center">
@@ -204,71 +207,71 @@ export const Controls: React.FC<ControlsProps> = ({
               id="aspect"
               checked={options.maintainAspectRatio}
               onChange={(e) => updateOption('maintainAspectRatio', e.target.checked)}
-              className="h-4 w-4 text-indigo-600 focus:ring-indigo-500 border-gray-300 rounded"
+              className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0"
             />
-            <label htmlFor="aspect" className="ml-2 text-sm text-slate-600">{t.maintainAspect}</label>
+            <label htmlFor="aspect" className="ml-2 text-xs text-slate-400 font-code">{t.maintainAspect}</label>
           </div>
         </section>
 
         {/* Adjustments */}
         <section>
-          <label className="block text-sm font-medium text-slate-700 mb-2">{t.transform}</label>
-          <div className="flex gap-2 mb-3">
+          <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.transform}</label>
+          <div className="flex gap-2 mb-2">
              <button 
                onClick={() => updateOption('rotate', (options.rotate - 90) % 360)}
-               className="flex-1 py-2 border border-slate-300 rounded-md text-sm hover:bg-slate-50 text-slate-700"
+               className="flex-1 py-1.5 border border-slate-700 bg-black/20 text-[10px] font-code text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50 transition-colors"
              >
-               ↺ -90°
+               ROT -90°
              </button>
              <button 
                onClick={() => updateOption('rotate', (options.rotate + 90) % 360)}
-               className="flex-1 py-2 border border-slate-300 rounded-md text-sm hover:bg-slate-50 text-slate-700"
+               className="flex-1 py-1.5 border border-slate-700 bg-black/20 text-[10px] font-code text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50 transition-colors"
              >
-               ↻ +90°
+               ROT +90°
              </button>
           </div>
           <div className="flex gap-2">
             <button 
               onClick={() => updateOption('flipX', !options.flipX)}
-              className={`flex-1 py-2 border rounded-md text-sm ${options.flipX ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+              className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipX ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}
             >
-              Flip H
+              FLIP H
             </button>
             <button 
               onClick={() => updateOption('flipY', !options.flipY)}
-              className={`flex-1 py-2 border rounded-md text-sm ${options.flipY ? 'bg-indigo-50 border-indigo-300 text-indigo-700' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+              className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipY ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}
             >
-              Flip V
+              FLIP V
             </button>
           </div>
         </section>
 
         {/* Filters */}
         <section>
-           <label className="block text-sm font-medium text-slate-700 mb-2">{t.filters}</label>
+           <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.filters}</label>
            <div className="space-y-3">
-             <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">{t.grayscale}</span>
+             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-xs text-slate-400 font-code">{t.grayscale}</span>
                 <input 
                   type="checkbox" 
                   checked={options.grayscale}
                   onChange={(e) => updateOption('grayscale', e.target.checked)}
-                  className="toggle-checkbox h-5 w-5 text-indigo-600 rounded focus:ring-indigo-500"
+                  className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0"
                 />
              </div>
-             <div className="flex items-center justify-between">
-                <span className="text-sm text-slate-600">{t.sharpen}</span>
+             <div className="flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-xs text-slate-400 font-code">{t.sharpen}</span>
                 <input 
                   type="checkbox" 
                   checked={options.sharpen}
                   onChange={(e) => updateOption('sharpen', e.target.checked)}
-                  className="toggle-checkbox h-5 w-5 text-indigo-600 rounded focus:ring-indigo-500"
+                  className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0"
                 />
              </div>
              <div>
                 <div className="flex justify-between mb-1">
-                  <span className="text-sm text-slate-600">{t.blur}</span>
-                  <span className="text-xs text-slate-400">{options.blur}px</span>
+                  <span className="text-xs text-slate-400 font-code">{t.blur}</span>
+                  <span className="text-[10px] text-cyan-500 font-code">{options.blur}px</span>
                 </div>
                 <input
                   type="range"
@@ -277,7 +280,7 @@ export const Controls: React.FC<ControlsProps> = ({
                   step="0.5"
                   value={options.blur}
                   onChange={(e) => updateOption('blur', Number(e.target.value))}
-                  className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
+                  className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                 />
              </div>
            </div>
@@ -285,28 +288,29 @@ export const Controls: React.FC<ControlsProps> = ({
 
         {/* Watermark */}
         <section>
-           <label className="block text-sm font-medium text-slate-700 mb-2">{t.watermark}</label>
+           <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.watermark}</label>
            <input
              type="text"
              placeholder={t.watermarkPlaceholder}
              value={options.watermarkText}
              onChange={(e) => updateOption('watermarkText', e.target.value)}
-             className="w-full px-3 py-2 text-sm border border-slate-300 rounded-md focus:ring-indigo-500 focus:border-indigo-500"
+             className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600"
            />
         </section>
       </div>
 
-      <div className="p-4 border-t border-slate-100 bg-slate-50">
+      <div className="p-4 border-t border-cyan-900/30 bg-slate-900/50 relative">
         <button
           onClick={onProcess}
           disabled={isProcessing}
-          className={`w-full py-3 px-4 rounded-lg font-semibold text-white shadow-lg transition-all
+          className={`w-full py-3 px-4 font-tech font-bold uppercase tracking-widest text-sm clip-button transition-all relative overflow-hidden group
             ${isProcessing 
-              ? 'bg-indigo-400 cursor-not-allowed' 
-              : 'bg-indigo-600 hover:bg-indigo-700 hover:shadow-indigo-500/30 active:scale-[0.98]'
+              ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+              : 'bg-cyan-600 hover:bg-cyan-500 text-white shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:shadow-[0_0_30px_rgba(6,182,212,0.6)]'
             }
           `}
         >
+          <div className="absolute inset-0 bg-white/10 translate-y-full group-hover:translate-y-0 transition-transform duration-300"></div>
           {isProcessing ? t.processing : t.processBtn}
         </button>
       </div>

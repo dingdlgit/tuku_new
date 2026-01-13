@@ -33,7 +33,7 @@ function App() {
 
   const t = {
     en: {
-      appTitle: "TUKUKU_NODE_V1",
+      appTitle: "TUKUKU",
       sloganTitle: "IMAGE PROCESSOR",
       uploadFailed: "CRITICAL ERROR: UPLOAD FAILED",
       processFailed: "PROCESSING ERROR",
@@ -48,7 +48,7 @@ function App() {
       serverDesc: "SECURE SERVER CONNECTION :: ESTABLISHED"
     },
     zh: {
-      appTitle: "图酷酷_节点_V1",
+      appTitle: "图酷酷",
       sloganTitle: "图像处理器",
       uploadFailed: "严重错误：上传失败",
       processFailed: "处理错误",
@@ -116,8 +116,6 @@ function App() {
         format: ImageFormat.ORIGINAL,
         width: data.width || null,
         height: data.height || null,
-        // CRITICAL FIX: Only pre-fill raw options if it is actually a raw file.
-        // Otherwise, setting these causes standard JPGs to be processed as raw bytes (garbage).
         rawWidth: isRaw ? (data.width || 1920) : undefined,
         rawHeight: isRaw ? (data.height || 1080) : undefined,
         rawPixelFormat: suggestedFormat
@@ -193,7 +191,6 @@ function App() {
   };
 
   return (
-    /* Removed bg-[#020617] to let starfield show through. Added bg-transparent/0. */
     <div className="flex flex-col h-full bg-transparent text-slate-300 font-sans selection:bg-cyan-500/30 selection:text-cyan-100">
       
       {/* Header */}
@@ -212,10 +209,6 @@ function App() {
             </div>
           </div>
           <div className="flex items-center gap-6">
-             <div className="hidden md:flex items-center gap-2 text-xs font-code text-cyan-700/80">
-               <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse shadow-[0_0_5px_#22c55e]"></span>
-               {t.serverDesc}
-             </div>
              <button 
                onClick={toggleLang}
                className="flex items-center justify-center px-4 py-1.5 text-xs font-code font-bold text-cyan-400 border border-cyan-800 hover:bg-cyan-900/30 hover:border-cyan-500 transition-all uppercase tracking-wider"
