@@ -44,9 +44,9 @@ const TerminalLogs = ({ isProcessing, lang }: { isProcessing: boolean; lang: Lan
   return (
     <div className="absolute bottom-4 right-4 w-64 h-32 bg-black/80 border border-green-500/50 p-2 font-code text-[10px] text-green-400 overflow-y-auto pointer-events-none z-50 rounded backdrop-blur-md shadow-lg" ref={scrollRef}>
       {logs.map((log, i) => (
-        <div key={i} className="whitespace-nowrap">> {log}</div>
+        <div key={i} className="whitespace-nowrap">&gt; {log}</div>
       ))}
-      {isProcessing && <div className="animate-pulse">> _</div>}
+      {isProcessing && <div className="animate-pulse">&gt; _</div>}
     </div>
   );
 };
