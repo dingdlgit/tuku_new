@@ -10,6 +10,8 @@ export enum ImageFormat {
   BMP = 'bmp'
 }
 
+export type RawPixelFormat = 'uyvy' | 'nv21' | 'rgba' | 'bgra' | 'rgb' | 'bgr';
+
 export interface ProcessOptions {
   format: ImageFormat;
   quality: number; // 1-100
@@ -27,6 +29,7 @@ export interface ProcessOptions {
   // New fields for RAW handling
   rawWidth?: number;
   rawHeight?: number;
+  rawPixelFormat?: RawPixelFormat;
 }
 
 export interface UploadResponse {

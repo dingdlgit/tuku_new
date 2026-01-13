@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ImageFormat, ProcessOptions, Language } from '../types';
+import { ImageFormat, ProcessOptions, Language, RawPixelFormat } from '../types';
 
 interface ControlsProps {
   options: ProcessOptions;
@@ -25,9 +25,10 @@ export const Controls: React.FC<ControlsProps> = ({
   const t = {
     en: {
       settings: "Settings",
-      sourceSettings: "Source Dimensions (Raw)",
-      sourceDesc: "Specify the original resolution to parse this raw file.",
-      format: "Format",
+      sourceSettings: "Raw Data Settings",
+      sourceDesc: "Required: Specify format & size for this RAW file.",
+      format: "Output Format",
+      pixelFormat: "Pixel Format",
       quality: "Quality",
       resize: "Resize",
       maintainAspect: "Maintain Aspect Ratio",
@@ -43,9 +44,10 @@ export const Controls: React.FC<ControlsProps> = ({
     },
     zh: {
       settings: "设置",
-      sourceSettings: "源图像尺寸 (Raw)",
-      sourceDesc: "指定原始分辨率以解析该 Raw 文件。",
+      sourceSettings: "Raw 数据源设置",
+      sourceDesc: "必填：指定该 RAW 文件的像素格式与尺寸。",
       format: "输出格式",
+      pixelFormat: "像素格式",
       quality: "画质质量",
       resize: "调整尺寸",
       maintainAspect: "保持长宽比",
@@ -65,7 +67,11 @@ export const Controls: React.FC<ControlsProps> = ({
     setOptions(prev => ({ ...prev, [key]: value }));
   };
 
-  const isRaw = inputFormat && (inputFormat.toLowerCase().endsWith('uyvy') || inputFormat.toLowerCase().endsWith('yuv'));
+  // Helper to detect if we need to show RAW controls
+  // Checks extension of original file passed in
+  const isRaw = inputFormat && (
+      ['.uyvy', '.yuv', '.nv21', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.bin'].some(ext => inputFormat.toLowerCase().endsWith(ext))
+  );
 
   return (
     <div className="bg-white rounded-xl shadow-sm border border-slate-200 flex flex-col h-full overflow-hidden">
@@ -82,9 +88,27 @@ export const Controls: React.FC<ControlsProps> = ({
         
         {/* RAW Format Specific Settings - Shown ONLY for Raw files */}
         {isRaw && (
-          <section className="bg-amber-50 p-3 rounded-lg border border-amber-200">
+          <section className="bg-amber-50 p-3 rounded-lg border border-amber-200 shadow-sm">
              <label className="block text-sm font-bold text-amber-800 mb-1">{t.sourceSettings}</label>
              <p className="text-xs text-amber-700 mb-3">{t.sourceDesc}</p>
+             
+             {/* Pixel Format Selector */}
+             <div className="mb-3">
+               <label className="block text-xs font-semibold text-amber-800 mb-1">{t.pixelFormat}</label>
+               <select
+                 value={options.rawPixelFormat || 'uyvy'}
+                 onChange={(e) => updateOption('rawPixelFormat', e.target.value as RawPixelFormat)}
+                 className="w-full px-2 py-1.5 text-sm border border-amber-300 rounded-md focus:ring-amber-500 focus:border-amber-500 bg-white"
+               >
+                 <option value="uyvy">UYVY (YUV 4:2:2)</option>
+                 <option value="nv21">NV21 (YUV 4:2:0)</option>
+                 <option value="rgba">RGBA (32-bit)</option>
+                 <option value="bgra">BGRA (32-bit)</option>
+                 <option value="rgb">RGB (24-bit)</option>
+                 <option value="bgr">BGR (24-bit)</option>
+               </select>
+             </div>
+
              <div className="flex gap-2 items-center">
                 <div className="relative w-full">
                   <input

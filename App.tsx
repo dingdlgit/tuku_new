@@ -2,7 +2,7 @@
 import React, { useState } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
-import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language } from './types';
+import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language, RawPixelFormat } from './types';
 
 const defaultOptions: ProcessOptions = {
   format: ImageFormat.ORIGINAL,
@@ -19,7 +19,8 @@ const defaultOptions: ProcessOptions = {
   sharpen: false,
   watermarkText: '',
   rawWidth: undefined,
-  rawHeight: undefined
+  rawHeight: undefined,
+  rawPixelFormat: 'uyvy' // default
 };
 
 function App() {
@@ -66,6 +67,18 @@ function App() {
     }
   }[lang];
 
+  // Helper to guess pixel format from extension
+  const getFormatFromExt = (filename: string): RawPixelFormat => {
+      const lower = filename.toLowerCase();
+      if (lower.endsWith('.uyvy')) return 'uyvy';
+      if (lower.endsWith('.nv21')) return 'nv21';
+      if (lower.endsWith('.rgba')) return 'rgba';
+      if (lower.endsWith('.bgra')) return 'bgra';
+      if (lower.endsWith('.rgb')) return 'rgb';
+      if (lower.endsWith('.bgr')) return 'bgr';
+      return 'uyvy'; // default fallback
+  };
+
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
     setResult(null);
@@ -92,17 +105,18 @@ function App() {
       const data: UploadResponse = await response.json();
       setCurrentFile(data);
       
-      // If uploading BMP, we can now set format to BMP (but user is warned it outputs PNG)
-      // or just keep it ORIGINAL which the backend also handles safely now.
+      const suggestedFormat = getFormatFromExt(data.originalName);
+
       setOptions({
         ...defaultOptions,
         format: ImageFormat.ORIGINAL,
         width: data.width || null,
         height: data.height || null,
         // If the backend managed to guess dimensions (e.g. from file size map), pre-fill them
-        // If not (width=0), leave them undefined or set to a sensible default like 1920x1080
+        // If not (width=0), leave them undefined to prompt user
         rawWidth: data.width || 1920,
-        rawHeight: data.height || 1080
+        rawHeight: data.height || 1080,
+        rawPixelFormat: suggestedFormat
       });
     } catch (error: any) {
       console.error(error);
@@ -163,15 +177,10 @@ function App() {
 
   const getBitDepthLabel = (depth?: string) => {
     if (!depth) return null;
-    // Hide '8-bit' (uchar) as it's the standard format. 
-    // Only show if it's high bit-depth to avoid UI clutter and confusion.
     if (depth === 'uchar') return null; 
-    
     if (depth === 'ushort' || depth === 'short') return '16-bit';
     if (depth === 'float') return '32-bit Float';
     if (depth === 'uint' || depth === 'int') return '32-bit Int';
-    
-    // Fallback: capitalize first letter
     return depth.charAt(0).toUpperCase() + depth.slice(1);
   };
 
@@ -181,7 +190,8 @@ function App() {
 
   // Helper to check for raw formats that browser can't render
   const isRawFormat = (filename: string) => {
-      return filename.toLowerCase().endsWith('.uyvy') || filename.toLowerCase().endsWith('.yuv');
+      const exts = ['.uyvy', '.yuv', '.nv21', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.bin'];
+      return exts.some(ext => filename.toLowerCase().endsWith(ext));
   };
 
   return (
@@ -238,7 +248,7 @@ function App() {
                     isProcessing={isProcessing}
                     originalDimensions={{ width: currentFile.width || 0, height: currentFile.height || 0 }}
                     lang={lang}
-                    inputFormat={currentFile.originalName} // Pass filename to detect ext for raw inputs
+                    inputFormat={currentFile.originalName} 
                   />
                 </div>
 
@@ -275,7 +285,7 @@ function App() {
                                  </svg>
                                  <span className="text-slate-500 font-medium">{t.noPreview}</span>
                                  <span className="text-slate-400 text-sm mt-1 text-center max-w-xs">
-                                    {lang === 'en' ? 'Set "Source Dimensions" in settings to process.' : '请在设置中输入“源图像尺寸”以进行处理。'}
+                                    {lang === 'en' ? 'Check RAW Settings.' : '请检查 Raw 数据设置。'}
                                  </span>
                               </div>
                            ) : (

@@ -16,14 +16,14 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
     en: {
       uploading: "Uploading...",
       mainText: "Click to Upload or Drag & Drop",
-      subText: "JPG, PNG, WEBP, BMP, UYVY up to 20MB",
+      subText: "JPG, PNG, WEBP, BMP, RAW (UYVY, NV21, RGB...) up to 20MB",
       formatError: "Format not supported.",
       sizeError: "File too large. Max size is 20MB."
     },
     zh: {
       uploading: "正在上传...",
       mainText: "点击上传或拖拽图片到此处",
-      subText: "支持 JPG, PNG, WEBP, BMP, UYVY (最大 20MB)",
+      subText: "支持 JPG, PNG, BMP, RAW (UYVY, NV21, RGB...) (最大 20MB)",
       formatError: "不支持该格式。",
       sizeError: "文件过大。最大允许 20MB。"
     }
@@ -55,15 +55,19 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
 
   const validateAndUpload = (file: File) => {
     // Relaxed validation: Check extensions for specific formats that might have generic/missing MIME types
-    const validExtensions = ['.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.heic', '.uyvy'];
-    const validMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/bmp', 'image/x-ms-bmp', 'image/gif', 'image/heic'];
+    const validExtensions = [
+      '.jpg', '.jpeg', '.png', '.webp', '.bmp', '.gif', '.heic', 
+      '.uyvy', '.yuv', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.nv21', '.bin'
+    ];
     
     const fileExt = '.' + file.name.split('.').pop()?.toLowerCase();
     
-    // Allow if MIME type is valid OR extension is valid
-    const isValid = validMimes.includes(file.type) || validExtensions.includes(fileExt);
+    // Check extension
+    const isValidExt = validExtensions.includes(fileExt);
+    // Basic image mime types
+    const isImageMime = file.type.startsWith('image/');
 
-    if (!isValid) {
+    if (!isValidExt && !isImageMime) {
       alert(t.formatError);
       return;
     }
@@ -93,7 +97,8 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
         ref={fileInputRef} 
         onChange={handleChange} 
         className="hidden" 
-        accept="image/*,.uyvy,.bmp"
+        // Accept common images + raw extensions
+        accept="image/*,.uyvy,.yuv,.raw,.rgb,.bgr,.bin,.nv21"
       />
       
       {isUploading ? (
