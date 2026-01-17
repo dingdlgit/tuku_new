@@ -448,8 +448,6 @@ app.post('/api/process', async (req, res) => {
        const lineHeight = fontSize * 1.2;
        const padding = fontSize; 
        
-       // Process multi-line text
-       // Simple XML escaping to prevent SVG breakage
        const escapeXml = (unsafe) => {
           return unsafe.replace(/[<>&'"]/g, (c) => {
             switch (c) {
@@ -462,20 +460,19 @@ app.post('/api/process', async (req, res) => {
           });
        };
 
-       const lines = options.watermarkText.split('\n');
+       const lines = options.watermarkText.split(/\r?\n/);
        
-       // Calculate position for BOTTOM-LEFT
-       // The anchor 'start' means x is the left edge of the text.
-       // We start drawing from the top line of the text block, so we need to calculate
-       // the Y coordinate of the first line such that the last line is at (height - padding).
-       const startX = padding; 
-       // Formula: TargetBottomY - ((numLines - 1) * lineHeight) - (descent adjustment approx)
-       // Simplified: SVG 'y' is the baseline. 
+       // Calculate position for BOTTOM-RIGHT
+       // We use text-anchor="end", so the X coordinate is the right boundary (width - padding).
+       // We start drawing from the top line, so we need to calculate the Y of the first line
+       // such that the last line lands at (height - padding).
+       const startX = svgWidth - padding; 
        const startY = svgHeight - padding - ((lines.length - 1) * lineHeight);
 
        const tspans = lines.map((line, i) => {
           const safeLine = escapeXml(line);
           const dy = i === 0 ? 0 : lineHeight;
+          // For multi-line with 'end' anchor, repeating 'x' is safe/required to keep alignment
           return `<tspan x="${startX}" dy="${dy}">${safeLine}</tspan>`;
        }).join('');
 
@@ -487,8 +484,8 @@ app.post('/api/process', async (req, res) => {
               font-size: ${fontSize}px; 
               font-weight: bold; 
               font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; 
-              text-anchor: start;
-              text-shadow: 2px 2px 4px rgba(0,0,0,0.8); /* Add shadow for visibility on light backgrounds */
+              text-anchor: end;
+              text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
             }
           </style>
           <text x="${startX}" y="${startY}" class="watermark">${tspans}</text>
@@ -496,7 +493,7 @@ app.post('/api/process', async (req, res) => {
        
        pipeline = pipeline.composite([{
           input: Buffer.from(svgText),
-          gravity: 'center' // The SVG is full size, so centering it aligns the coordinates
+          gravity: 'center' 
        }]);
     }
 

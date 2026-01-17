@@ -38,7 +38,7 @@ export const Controls: React.FC<ControlsProps> = ({
       sharpen: "SHARPEN",
       blur: "GAUSSIAN_BLUR",
       watermark: "WATERMARK",
-      watermarkPlaceholder: "TEXT_DATA... (Multi-line supported)",
+      watermarkPlaceholder: "Enter text... (Press Enter for new line)",
       processBtn: "EXECUTE_PROCESS",
       processing: "PROCESSING..."
     },
@@ -57,7 +57,7 @@ export const Controls: React.FC<ControlsProps> = ({
       sharpen: "锐化增强",
       blur: "高斯模糊",
       watermark: "水印叠加",
-      watermarkPlaceholder: "输入文本... (支持多行)",
+      watermarkPlaceholder: "输入文本... (按回车换行)",
       processBtn: "执行处理",
       processing: "处理中..."
     }
@@ -290,11 +290,11 @@ export const Controls: React.FC<ControlsProps> = ({
         <section>
            <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.watermark}</label>
            <textarea
-             rows={3}
+             rows={4}
              placeholder={t.watermarkPlaceholder}
              value={options.watermarkText}
              onChange={(e) => updateOption('watermarkText', e.target.value)}
-             className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600 resize-none rounded-sm"
+             className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600 rounded-sm"
            />
         </section>
       </div>
