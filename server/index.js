@@ -444,24 +444,59 @@ app.post('/api/process', async (req, res) => {
     if (options.watermarkText) {
        const svgWidth = currentWidth;
        const svgHeight = currentHeight;
-       const fontSize = Math.max(Math.floor(svgWidth * 0.05), 20);
+       const fontSize = Math.max(Math.floor(svgWidth * 0.03), 20); // Scale with image, min 20px
+       const lineHeight = fontSize * 1.2;
+       const padding = fontSize; 
+       
+       // Process multi-line text
+       // Simple XML escaping to prevent SVG breakage
+       const escapeXml = (unsafe) => {
+          return unsafe.replace(/[<>&'"]/g, (c) => {
+            switch (c) {
+              case '<': return '&lt;';
+              case '>': return '&gt;';
+              case '&': return '&amp;';
+              case '\'': return '&apos;';
+              case '"': return '&quot;';
+            }
+          });
+       };
+
+       const lines = options.watermarkText.split('\n');
+       
+       // Calculate position for BOTTOM-LEFT
+       // The anchor 'start' means x is the left edge of the text.
+       // We start drawing from the top line of the text block, so we need to calculate
+       // the Y coordinate of the first line such that the last line is at (height - padding).
+       const startX = padding; 
+       // Formula: TargetBottomY - ((numLines - 1) * lineHeight) - (descent adjustment approx)
+       // Simplified: SVG 'y' is the baseline. 
+       const startY = svgHeight - padding - ((lines.length - 1) * lineHeight);
+
+       const tspans = lines.map((line, i) => {
+          const safeLine = escapeXml(line);
+          const dy = i === 0 ? 0 : lineHeight;
+          return `<tspan x="${startX}" dy="${dy}">${safeLine}</tspan>`;
+       }).join('');
 
        const svgText = `
         <svg width="${svgWidth}" height="${svgHeight}">
           <style>
-            .title { 
-              fill: rgba(255, 255, 255, 0.5); 
+            .watermark { 
+              fill: rgba(255, 255, 255, 0.85); 
               font-size: ${fontSize}px; 
               font-weight: bold; 
-              font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', 'WenQuanYi Micro Hei', sans-serif; 
+              font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; 
+              text-anchor: start;
+              text-shadow: 2px 2px 4px rgba(0,0,0,0.8); /* Add shadow for visibility on light backgrounds */
             }
           </style>
-          <text x="50%" y="50%" text-anchor="middle" dominant-baseline="middle" class="title">${options.watermarkText}</text>
+          <text x="${startX}" y="${startY}" class="watermark">${tspans}</text>
         </svg>`;
        
        pipeline = pipeline.composite([{
           input: Buffer.from(svgText),
-          gravity: 'center'
+          gravity: 'center' // The SVG is full size, so centering it aligns the coordinates
        }]);
     }
 
