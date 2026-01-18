@@ -67,6 +67,53 @@ export const Controls: React.FC<ControlsProps> = ({
     setOptions(prev => ({ ...prev, [key]: value }));
   };
 
+  // Helper to handle dimension changes with aspect ratio locking
+  const handleDimensionChange = (dimension: 'width' | 'height', value: string) => {
+    const numValue = value ? Number(value) : null;
+    
+    setOptions(prev => {
+      const next = { ...prev, [dimension]: numValue };
+
+      // Auto-calculate the other dimension if aspect ratio is locked and we have original dims
+      // Note: originalDimensions.width > 0 check ensures we don't divide by zero or use invalid metadata
+      if (
+        prev.maintainAspectRatio && 
+        originalDimensions && 
+        originalDimensions.width > 0 && 
+        originalDimensions.height > 0 && 
+        numValue !== null
+      ) {
+        const ratio = originalDimensions.width / originalDimensions.height;
+        
+        if (dimension === 'width') {
+          next.height = Math.round(numValue / ratio);
+        } else {
+          next.width = Math.round(numValue * ratio);
+        }
+      }
+      return next;
+    });
+  };
+
+  // Helper to handle toggling the checkbox
+  const handleAspectToggle = (checked: boolean) => {
+    setOptions(prev => {
+      const next = { ...prev, maintainAspectRatio: checked };
+      // If turning ON, and we have a width, sync the height immediately
+      if (
+        checked && 
+        originalDimensions && 
+        originalDimensions.width > 0 && 
+        originalDimensions.height > 0 && 
+        next.width
+      ) {
+         const ratio = originalDimensions.width / originalDimensions.height;
+         next.height = Math.round(next.width / ratio);
+      }
+      return next;
+    });
+  };
+
   const isRaw = inputFormat && (
       ['.uyvy', '.yuv', '.nv21', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.bin'].some(ext => inputFormat.toLowerCase().endsWith(ext))
   );
@@ -184,7 +231,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 type="number"
                 placeholder={originalDimensions?.width ? originalDimensions.width.toString() : 'Width'}
                 value={options.width || ''}
-                onChange={(e) => updateOption('width', e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => handleDimensionChange('width', e.target.value)}
                 className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600"
               />
               <span className="absolute right-3 top-2 text-[10px] text-slate-600">W</span>
@@ -195,7 +242,7 @@ export const Controls: React.FC<ControlsProps> = ({
                 type="number"
                 placeholder={originalDimensions?.height ? originalDimensions.height.toString() : 'Height'}
                 value={options.height || ''}
-                onChange={(e) => updateOption('height', e.target.value ? Number(e.target.value) : null)}
+                onChange={(e) => handleDimensionChange('height', e.target.value)}
                 className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600"
               />
               <span className="absolute right-3 top-2 text-[10px] text-slate-600">H</span>
@@ -206,7 +253,7 @@ export const Controls: React.FC<ControlsProps> = ({
               type="checkbox"
               id="aspect"
               checked={options.maintainAspectRatio}
-              onChange={(e) => updateOption('maintainAspectRatio', e.target.checked)}
+              onChange={(e) => handleAspectToggle(e.target.checked)}
               className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0"
             />
             <label htmlFor="aspect" className="ml-2 text-xs text-slate-400 font-code">{t.maintainAspect}</label>
