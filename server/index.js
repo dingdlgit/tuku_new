@@ -315,6 +315,7 @@ async function getSharpInstance(filePath, rawOptions = {}) {
   }
 
   // --- Standard Formats ---
+  // Ensure we start with auto-rotation (EXIF) applied
   return sharp(filePath, { failOnError: false, limitInputPixels: false }).rotate().toColorspace('srgb');
 }
 
@@ -395,29 +396,14 @@ app.post('/api/process', async (req, res) => {
     const instance = await getSharpInstance(inputPath, rawOptions);
     const metadata = await instance.metadata();
     
+    // Start pipeline
+    // instance has .rotate() (auto-orient) enabled for standard files
     let pipeline = instance.clone();
     pipeline = pipeline.ensureAlpha(); 
 
-    let currentWidth = metadata.width;
-    let currentHeight = metadata.height;
-
-    // 1. Resize
+    // 1. Resize (Applied to auto-oriented input)
+    // We do resizing first to reduce buffer size if we are shrinking
     if ((options.width && options.width > 0) || (options.height && options.height > 0)) {
-      if (options.width && options.height) {
-         currentWidth = options.width;
-         currentHeight = options.height;
-      } else if (options.width) {
-         currentWidth = options.width;
-         if (options.maintainAspectRatio) {
-            currentHeight = Math.round(metadata.height * (options.width / metadata.width));
-         }
-      } else if (options.height) {
-         currentHeight = options.height;
-         if (options.maintainAspectRatio) {
-             currentWidth = Math.round(metadata.width * (options.height / metadata.height));
-         }
-      }
-
       pipeline = pipeline.resize({
         width: options.width || null,
         height: options.height || null,
@@ -426,11 +412,14 @@ app.post('/api/process', async (req, res) => {
     }
 
     // 2. Rotate & Flip
-    if (options.rotate) {
-        pipeline = pipeline.rotate(options.rotate);
-        // Note: we don't strictly need to swap currentWidth/Height here anymore because
-        // we re-read dimensions before watermark, but let's keep logic cleaner.
+    // FIX: To support User Rotation ON TOP OF Exif Auto-Rotation, we must "bake" the current state.
+    // Otherwise, calling .rotate(90) overrides the initial .rotate() (auto-orient).
+    if (options.rotate && options.rotate !== 0) {
+        const intermediate = await pipeline.png().toBuffer();
+        pipeline = sharp(intermediate); // Reload upright, resized image
+        pipeline = pipeline.rotate(options.rotate); // Apply user rotation
     }
+
     if (options.flipX) pipeline = pipeline.flop();
     if (options.flipY) pipeline = pipeline.flip();
 
@@ -441,9 +430,8 @@ app.post('/api/process', async (req, res) => {
 
     // 4. Watermark
     if (options.watermarkText) {
-       // CRITICAL: Force render to buffer to ensure we have exact dimensions after resize/rotate
-       // This prevents "Image to composite must have same dimensions or smaller" errors
-       // caused by slight mismatches between manual calc and Sharp's internal state.
+       // We force buffer again to ensure exact dimensions for SVG composition
+       // This handles cases where rotation/flip changed dimensions
        const intermediateBuffer = await pipeline.png().toBuffer();
        pipeline = sharp(intermediateBuffer);
        
@@ -451,7 +439,7 @@ app.post('/api/process', async (req, res) => {
        const svgWidth = tempMeta.width;
        const svgHeight = tempMeta.height;
        
-       const fontSize = Math.max(Math.floor(svgWidth * 0.03), 20); // Scale with image, min 20px
+       const fontSize = Math.max(Math.floor(svgWidth * 0.03), 20); 
        const lineHeight = fontSize * 1.2;
        const padding = fontSize; 
        
@@ -477,7 +465,7 @@ app.post('/api/process', async (req, res) => {
          case 'top-left':
            textAnchor = 'start';
            startX = padding;
-           startY = padding + fontSize; // Approx baseline of first line
+           startY = padding + fontSize; 
            break;
          case 'top-right':
            textAnchor = 'end';
@@ -487,7 +475,6 @@ app.post('/api/process', async (req, res) => {
          case 'center':
            textAnchor = 'middle';
            startX = svgWidth / 2;
-           // Vertically center the block of text
            startY = (svgHeight / 2) - ((lines.length * lineHeight) / 2) + fontSize;
            break;
          case 'bottom-left':
