@@ -1,55 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
 import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language, RawPixelFormat } from './types';
-
-// --- Sub-component: Fake Terminal Logs ---
-const TerminalLogs = ({ isProcessing, lang }: { isProcessing: boolean; lang: Language }) => {
-  const [logs, setLogs] = useState<string[]>([]);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  const logMessages = [
-    "INITIALIZING_CORE...",
-    "LOADING_BUFFER_MEMORY...",
-    "ANALYZING_PIXEL_DENSITY...",
-    "DETECTING_RAW_HEADERS...",
-    "QUANTIZING_COLOR_SPACE...",
-    "APPLYING_MATRIX_TRANSFORM...",
-    "OPTIMIZING_COMPRESSION...",
-    "WRITING_EXIF_DATA...",
-    "FINALIZING_OUTPUT_STREAM...",
-    "CLEANING_TEMP_REGISTERS..."
-  ];
-
-  useEffect(() => {
-    if (isProcessing) {
-      setLogs([]);
-      let index = 0;
-      const interval = setInterval(() => {
-        if (index < logMessages.length) {
-          const prefix = `[${new Date().toLocaleTimeString('en-GB', { hour12: false })}] `;
-          setLogs(prev => [...prev, prefix + logMessages[index]]);
-          index++;
-          // Auto scroll
-          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-        }
-      }, 300 + Math.random() * 200);
-      return () => clearInterval(interval);
-    }
-  }, [isProcessing]);
-
-  if (!isProcessing && logs.length === 0) return null;
-
-  return (
-    <div className="absolute bottom-4 right-4 w-64 h-32 bg-black/80 border border-green-500/50 p-2 font-code text-[10px] text-green-400 overflow-y-auto pointer-events-none z-50 rounded backdrop-blur-md shadow-lg" ref={scrollRef}>
-      {logs.map((log, i) => (
-        <div key={i} className="whitespace-nowrap">&gt; {log}</div>
-      ))}
-      {isProcessing && <div className="animate-pulse">&gt; _</div>}
-    </div>
-  );
-};
 
 const defaultOptions: ProcessOptions = {
   format: ImageFormat.ORIGINAL,
@@ -85,7 +38,7 @@ function App() {
       sloganTitle: "IMAGE PROCESSOR",
       uploadFailed: "CRITICAL ERROR: UPLOAD FAILED",
       processFailed: "PROCESSING ERROR",
-      processedSuccess: "COMPILATION COMPLETE",
+      processedSuccess: "RENDER_COMPLETE", // Updated
       preview: "VISUAL_FEED",
       noPreview: "NO VISUAL FEED FOR RAW DATA",
       originalSize: "INPUT_SIZE",
@@ -93,14 +46,15 @@ function App() {
       savings: "EFFICIENCY",
       startOver: "RESET_SYSTEM",
       download: "EXTRACT_DATA",
-      serverDesc: "SECURE SERVER CONNECTION :: ESTABLISHED"
+      serverDesc: "SECURE SERVER CONNECTION :: ESTABLISHED",
+      status: "STATUS"
     },
     zh: {
       appTitle: "图酷酷",
       sloganTitle: "图像处理器",
       uploadFailed: "严重错误：上传失败",
       processFailed: "处理错误",
-      processedSuccess: "编译完成",
+      processedSuccess: "渲染完毕", // Updated
       preview: "视觉反馈",
       noPreview: "RAW 数据无视觉反馈",
       originalSize: "输入体积",
@@ -108,7 +62,8 @@ function App() {
       savings: "效率提升",
       startOver: "重置系统",
       download: "提取数据",
-      serverDesc: "安全连接 :: 已建立"
+      serverDesc: "安全连接 :: 已建立",
+      status: "状态"
     }
   }[lang];
 
@@ -323,21 +278,24 @@ function App() {
                          </div>
                       )}
 
-                      {/* Terminal Logs (Bottom Right Overlay) */}
-                      <TerminalLogs isProcessing={isProcessing} lang={lang} />
-
+                      {/* Result View or Original View */}
                       {result ? (
                          <div className="flex flex-col items-center relative w-full h-full justify-center">
-                            {/* Standard Result Display */}
                             <img 
                               src={result.url} 
                               alt="Processed" 
                               className="max-h-[500px] w-full object-contain shadow-[0_0_30px_rgba(6,182,212,0.15)] border border-slate-700" 
                             />
                             
-                            <div className="absolute top-4 left-4 mt-2 bg-green-900/30 text-green-400 px-4 py-1 border-l-2 border-green-500 flex items-center backdrop-blur-md z-40">
-                               <svg className="w-4 h-4 mr-2 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                               <span className="font-code text-xs tracking-wider uppercase">{t.processedSuccess}</span>
+                            {/* Cyberpunk HUD Status Badge */}
+                            <div className="absolute top-4 right-4 z-40 pointer-events-none">
+                                <div className="flex items-center gap-3 bg-cyan-950/80 border-l-2 border-cyan-400 px-4 py-2 backdrop-blur-md shadow-[0_0_15px_rgba(6,182,212,0.2)] animate-pulse">
+                                    <div className="flex flex-col items-end">
+                                        <span className="text-[10px] font-tech text-cyan-400 tracking-widest">{t.status}</span>
+                                        <span className="text-sm font-code font-bold text-white tracking-wider">{t.processedSuccess}</span>
+                                    </div>
+                                    <div className="w-2 h-2 bg-cyan-400 shadow-[0_0_10px_#06b6d4] rounded-full"></div>
+                                </div>
                             </div>
                          </div>
                       ) : (
