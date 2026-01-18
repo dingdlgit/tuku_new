@@ -45,7 +45,10 @@ export const Controls: React.FC<ControlsProps> = ({
       posBL: "Bottom Left",
       posBR: "Bottom Right",
       processBtn: "EXECUTE_PROCESS",
-      processing: "PROCESSING..."
+      processing: "PROCESSING...",
+      rotBtn: "ROT +90°",
+      flipH: "FLIP H",
+      flipV: "FLIP V"
     },
     zh: {
       settings: "系统配置",
@@ -69,7 +72,10 @@ export const Controls: React.FC<ControlsProps> = ({
       posBL: "左下",
       posBR: "右下",
       processBtn: "执行处理",
-      processing: "处理中..."
+      processing: "处理中...",
+      rotBtn: "旋转 +90°",
+      flipH: "水平翻转",
+      flipV: "垂直翻转"
     }
   }[lang];
 
@@ -127,6 +133,9 @@ export const Controls: React.FC<ControlsProps> = ({
   const isRaw = inputFormat && (
       ['.uyvy', '.yuv', '.nv21', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.bin'].some(ext => inputFormat.toLowerCase().endsWith(ext))
   );
+
+  // Calculate rotation count (0, 1, 2, 3)
+  const rotateCount = (options.rotate % 360) / 90;
 
   return (
     <div className="bg-slate-900/80 backdrop-blur-md rounded-none border border-cyan-900/50 flex flex-col h-full overflow-hidden relative">
@@ -273,32 +282,43 @@ export const Controls: React.FC<ControlsProps> = ({
         {/* Adjustments */}
         <section>
           <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.transform}</label>
-          <div className="flex gap-2 mb-2">
-             <button 
-               onClick={() => updateOption('rotate', (options.rotate - 90) % 360)}
-               className="flex-1 py-1.5 border border-slate-700 bg-black/20 text-[10px] font-code text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50 transition-colors"
-             >
-               ROT -90°
-             </button>
+          
+          {/* Rotate Button */}
+          <div className="mb-2">
              <button 
                onClick={() => updateOption('rotate', (options.rotate + 90) % 360)}
-               className="flex-1 py-1.5 border border-slate-700 bg-black/20 text-[10px] font-code text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50 transition-colors"
+               className={`w-full py-1.5 border font-code text-[10px] transition-all relative overflow-hidden group
+                 ${rotateCount > 0 
+                   ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]' 
+                   : 'bg-black/20 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'
+                 }`}
              >
-               ROT +90°
+               <span className="relative z-10 flex items-center justify-center gap-2">
+                 {t.rotBtn}
+                 {rotateCount > 0 && (
+                   <span className="bg-cyan-500 text-black px-1.5 py-0.5 rounded-sm font-bold text-[9px] shadow-sm">
+                     x{rotateCount}
+                   </span>
+                 )}
+               </span>
+               {/* Animated Background for active state */}
+               {rotateCount > 0 && <div className="absolute inset-0 bg-cyan-400/5 animate-pulse z-0"></div>}
              </button>
           </div>
+
+          {/* Flip Buttons */}
           <div className="flex gap-2">
             <button 
               onClick={() => updateOption('flipX', !options.flipX)}
               className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipX ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}
             >
-              FLIP H
+              {t.flipH}
             </button>
             <button 
               onClick={() => updateOption('flipY', !options.flipY)}
               className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipY ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}
             >
-              FLIP V
+              {t.flipV}
             </button>
           </div>
         </section>
