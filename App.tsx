@@ -161,6 +161,15 @@ function App() {
       }
 
       const data: ProcessResponse = await response.json();
+
+      // Fix for flashing: Preload the image before showing it
+      await new Promise((resolve) => {
+        const img = new Image();
+        img.src = data.url;
+        img.onload = resolve;
+        img.onerror = resolve; // Resolve even on error to allow UI to show (maybe error placeholder)
+      });
+
       setResult(data);
     } catch (error: any) {
       console.error(error);
