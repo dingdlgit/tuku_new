@@ -48,7 +48,9 @@ export const Controls: React.FC<ControlsProps> = ({
       processing: "PROCESSING...",
       rotBtn: "ROT +90°",
       flipH: "FLIP H",
-      flipV: "FLIP V"
+      flipV: "FLIP V",
+      widthLabel: "W",
+      heightLabel: "H"
     },
     zh: {
       settings: "系统配置",
@@ -75,7 +77,9 @@ export const Controls: React.FC<ControlsProps> = ({
       processing: "处理中...",
       rotBtn: "旋转 +90°",
       flipH: "水平翻转",
-      flipV: "垂直翻转"
+      flipV: "垂直翻转",
+      widthLabel: "宽",
+      heightLabel: "高"
     }
   }[lang];
 
@@ -246,25 +250,25 @@ export const Controls: React.FC<ControlsProps> = ({
           <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.resize}</label>
           <div className="flex gap-2 items-center mb-3">
             <div className="relative w-full">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">{t.widthLabel}</span>
               <input
                 type="number"
-                placeholder={originalDimensions?.width ? originalDimensions.width.toString() : 'Width'}
+                placeholder={originalDimensions?.width ? originalDimensions.width.toString() : ''}
                 value={options.width || ''}
                 onChange={(e) => handleDimensionChange('width', e.target.value)}
-                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600"
+                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 pl-8 pr-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-700"
               />
-              <span className="absolute right-3 top-2 text-[10px] text-slate-600">W</span>
             </div>
             <span className="text-slate-600 text-xs">×</span>
             <div className="relative w-full">
+              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">{t.heightLabel}</span>
               <input
                 type="number"
-                placeholder={originalDimensions?.height ? originalDimensions.height.toString() : 'Height'}
+                placeholder={originalDimensions?.height ? originalDimensions.height.toString() : ''}
                 value={options.height || ''}
                 onChange={(e) => handleDimensionChange('height', e.target.value)}
-                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600"
+                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 pl-8 pr-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-700"
               />
-              <span className="absolute right-3 top-2 text-[10px] text-slate-600">H</span>
             </div>
           </div>
           <div className="flex items-center">
