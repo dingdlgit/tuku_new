@@ -38,7 +38,7 @@ function App() {
       sloganTitle: "IMAGE PROCESSOR",
       uploadFailed: "CRITICAL ERROR: UPLOAD FAILED",
       processFailed: "PROCESSING ERROR",
-      processedSuccess: "RENDER_COMPLETE", // Updated
+      processedSuccess: "RENDER_COMPLETE",
       preview: "VISUAL_FEED",
       noPreview: "NO VISUAL FEED FOR RAW DATA",
       originalSize: "INPUT_SIZE",
@@ -47,14 +47,16 @@ function App() {
       startOver: "RESET_SYSTEM",
       download: "EXTRACT_DATA",
       serverDesc: "SECURE SERVER CONNECTION :: ESTABLISHED",
-      status: "STATUS"
+      status: "STATUS",
+      coord: "COORD",
+      auto: "AUTO"
     },
     zh: {
       appTitle: "图酷酷",
       sloganTitle: "图像处理器",
       uploadFailed: "严重错误：上传失败",
       processFailed: "处理错误",
-      processedSuccess: "渲染完毕", // Updated
+      processedSuccess: "渲染完毕",
       preview: "视觉反馈",
       noPreview: "RAW 数据无视觉反馈",
       originalSize: "输入体积",
@@ -63,7 +65,9 @@ function App() {
       startOver: "重置系统",
       download: "提取数据",
       serverDesc: "安全连接 :: 已建立",
-      status: "状态"
+      status: "状态",
+      coord: "尺寸",
+      auto: "自动"
     }
   }[lang];
 
@@ -263,7 +267,7 @@ function App() {
                         <div className="w-4 h-1 bg-cyan-600/50"></div>
                     </div>
                     <div className="absolute bottom-0 right-0 p-2 z-20 text-[10px] font-code text-slate-500 uppercase">
-                        COORD: {options.width || 'AUTO'} x {options.height || 'AUTO'}
+                        {t.coord}: {options.width || t.auto} x {options.height || t.auto}
                     </div>
 
                     {/* Image Viewport */}
