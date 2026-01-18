@@ -428,9 +428,8 @@ app.post('/api/process', async (req, res) => {
     // 2. Rotate & Flip
     if (options.rotate) {
         pipeline = pipeline.rotate(options.rotate);
-        if (Math.abs(options.rotate) === 90 || Math.abs(options.rotate) === 270) {
-            [currentWidth, currentHeight] = [currentHeight, currentWidth];
-        }
+        // Note: we don't strictly need to swap currentWidth/Height here anymore because
+        // we re-read dimensions before watermark, but let's keep logic cleaner.
     }
     if (options.flipX) pipeline = pipeline.flop();
     if (options.flipY) pipeline = pipeline.flip();
@@ -442,8 +441,16 @@ app.post('/api/process', async (req, res) => {
 
     // 4. Watermark
     if (options.watermarkText) {
-       const svgWidth = currentWidth;
-       const svgHeight = currentHeight;
+       // CRITICAL: Force render to buffer to ensure we have exact dimensions after resize/rotate
+       // This prevents "Image to composite must have same dimensions or smaller" errors
+       // caused by slight mismatches between manual calc and Sharp's internal state.
+       const intermediateBuffer = await pipeline.png().toBuffer();
+       pipeline = sharp(intermediateBuffer);
+       
+       const tempMeta = await pipeline.metadata();
+       const svgWidth = tempMeta.width;
+       const svgHeight = tempMeta.height;
+       
        const fontSize = Math.max(Math.floor(svgWidth * 0.03), 20); // Scale with image, min 20px
        const lineHeight = fontSize * 1.2;
        const padding = fontSize; 
@@ -481,7 +488,6 @@ app.post('/api/process', async (req, res) => {
            textAnchor = 'middle';
            startX = svgWidth / 2;
            // Vertically center the block of text
-           // Center Y - Half Height + Adjustment for first line baseline
            startY = (svgHeight / 2) - ((lines.length * lineHeight) / 2) + fontSize;
            break;
          case 'bottom-left':
