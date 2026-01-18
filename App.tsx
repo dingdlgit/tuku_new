@@ -65,6 +65,7 @@ const defaultOptions: ProcessOptions = {
   blur: 0,
   sharpen: false,
   watermarkText: '',
+  watermarkPosition: 'bottom-right',
   rawWidth: undefined,
   rawHeight: undefined,
   rawPixelFormat: 'uyvy' // default

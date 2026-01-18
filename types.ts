@@ -12,6 +12,8 @@ export enum ImageFormat {
 
 export type RawPixelFormat = 'uyvy' | 'nv21' | 'rgba' | 'bgra' | 'rgb' | 'bgr';
 
+export type WatermarkPosition = 'top-left' | 'top-right' | 'center' | 'bottom-left' | 'bottom-right';
+
 export interface ProcessOptions {
   format: ImageFormat;
   quality: number; // 1-100
@@ -26,6 +28,7 @@ export interface ProcessOptions {
   blur: number; // 0-100
   sharpen: boolean;
   watermarkText: string;
+  watermarkPosition: WatermarkPosition;
   // New fields for RAW handling
   rawWidth?: number;
   rawHeight?: number;

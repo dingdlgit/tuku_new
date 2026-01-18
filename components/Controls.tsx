@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { ImageFormat, ProcessOptions, Language, RawPixelFormat } from '../types';
+import { ImageFormat, ProcessOptions, Language, RawPixelFormat, WatermarkPosition } from '../types';
 
 interface ControlsProps {
   options: ProcessOptions;
@@ -38,7 +38,12 @@ export const Controls: React.FC<ControlsProps> = ({
       sharpen: "SHARPEN",
       blur: "GAUSSIAN_BLUR",
       watermark: "WATERMARK",
-      watermarkPlaceholder: "Enter text... (Press Enter for new line)",
+      watermarkPos: "POSITION",
+      posTL: "Top Left",
+      posTR: "Top Right",
+      posC: "Center",
+      posBL: "Bottom Left",
+      posBR: "Bottom Right",
       processBtn: "EXECUTE_PROCESS",
       processing: "PROCESSING..."
     },
@@ -57,7 +62,12 @@ export const Controls: React.FC<ControlsProps> = ({
       sharpen: "锐化增强",
       blur: "高斯模糊",
       watermark: "水印叠加",
-      watermarkPlaceholder: "输入文本... (按回车换行)",
+      watermarkPos: "位置",
+      posTL: "左上",
+      posTR: "右上",
+      posC: "居中",
+      posBL: "左下",
+      posBR: "右下",
       processBtn: "执行处理",
       processing: "处理中..."
     }
@@ -336,12 +346,26 @@ export const Controls: React.FC<ControlsProps> = ({
         {/* Watermark */}
         <section>
            <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.watermark}</label>
+           <div className="mb-2">
+             <label className="block text-[10px] text-slate-500 mb-1 font-code">{t.watermarkPos}</label>
+             <select 
+               value={options.watermarkPosition || 'bottom-right'}
+               onChange={(e) => updateOption('watermarkPosition', e.target.value as WatermarkPosition)}
+               className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code uppercase"
+             >
+               <option value="top-left">{t.posTL}</option>
+               <option value="top-right">{t.posTR}</option>
+               <option value="center">{t.posC}</option>
+               <option value="bottom-left">{t.posBL}</option>
+               <option value="bottom-right">{t.posBR}</option>
+             </select>
+           </div>
            <textarea
-             rows={4}
-             placeholder={t.watermarkPlaceholder}
+             rows={2}
+             placeholder=""
              value={options.watermarkText}
              onChange={(e) => updateOption('watermarkText', e.target.value)}
-             className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-600 rounded-sm"
+             className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code rounded-sm"
            />
         </section>
       </div>

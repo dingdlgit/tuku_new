@@ -461,18 +461,45 @@ app.post('/api/process', async (req, res) => {
        };
 
        const lines = options.watermarkText.split(/\r?\n/);
-       
-       // Calculate position for BOTTOM-RIGHT
-       // We use text-anchor="end", so the X coordinate is the right boundary (width - padding).
-       // We start drawing from the top line, so we need to calculate the Y of the first line
-       // such that the last line lands at (height - padding).
-       const startX = svgWidth - padding; 
-       const startY = svgHeight - padding - ((lines.length - 1) * lineHeight);
+       const pos = options.watermarkPosition || 'bottom-right';
+
+       let startX, startY, textAnchor;
+       const totalTextHeight = (lines.length - 1) * lineHeight;
+
+       switch (pos) {
+         case 'top-left':
+           textAnchor = 'start';
+           startX = padding;
+           startY = padding + fontSize; // Approx baseline of first line
+           break;
+         case 'top-right':
+           textAnchor = 'end';
+           startX = svgWidth - padding;
+           startY = padding + fontSize;
+           break;
+         case 'center':
+           textAnchor = 'middle';
+           startX = svgWidth / 2;
+           // Vertically center the block of text
+           // Center Y - Half Height + Adjustment for first line baseline
+           startY = (svgHeight / 2) - ((lines.length * lineHeight) / 2) + fontSize;
+           break;
+         case 'bottom-left':
+           textAnchor = 'start';
+           startX = padding;
+           startY = svgHeight - padding - totalTextHeight;
+           break;
+         case 'bottom-right':
+         default:
+           textAnchor = 'end';
+           startX = svgWidth - padding;
+           startY = svgHeight - padding - totalTextHeight;
+           break;
+       }
 
        const tspans = lines.map((line, i) => {
           const safeLine = escapeXml(line);
           const dy = i === 0 ? 0 : lineHeight;
-          // For multi-line with 'end' anchor, repeating 'x' is safe/required to keep alignment
           return `<tspan x="${startX}" dy="${dy}">${safeLine}</tspan>`;
        }).join('');
 
@@ -484,7 +511,7 @@ app.post('/api/process', async (req, res) => {
               font-size: ${fontSize}px; 
               font-weight: bold; 
               font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; 
-              text-anchor: end;
+              text-anchor: ${textAnchor};
               text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
             }
           </style>
