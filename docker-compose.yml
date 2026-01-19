@@ -1,3 +1,4 @@
+
 version: '3.8'
 
 services:
@@ -18,4 +19,5 @@ services:
     volumes:
       - ./server/uploads:/app/uploads
       - ./server/processed:/app/processed
+      - ./server/data:/app/data
     restart: always

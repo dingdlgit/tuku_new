@@ -22,10 +22,14 @@ app.use(express.json());
 // Directories
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const PROCESSED_DIR = path.join(__dirname, 'processed');
-const STATS_FILE = path.join(__dirname, 'stats.json');
+// Change: Store stats in a dedicated 'data' folder
+const DATA_DIR = path.join(__dirname, 'data');
+const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 if (!fs.existsSync(PROCESSED_DIR)) fs.mkdirSync(PROCESSED_DIR);
+// Change: Ensure data dir exists
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
 
 // Storage config
 const storage = multer.diskStorage({
@@ -47,6 +51,7 @@ const upload = multer({
 const CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 mins
 setInterval(() => {
   const now = Date.now();
+  // Only cleanup uploads and processed, DO NOT touch DATA_DIR
   [UPLOAD_DIR, PROCESSED_DIR].forEach(dir => {
     fs.readdir(dir, (err, files) => {
       if (err) return;
