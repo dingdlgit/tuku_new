@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
 import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language, RawPixelFormat } from './types';
@@ -31,6 +31,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [options, setOptions] = useState<ProcessOptions>(defaultOptions);
   const [result, setResult] = useState<ProcessResponse | null>(null);
+  const [totalProcessed, setTotalProcessed] = useState(0);
 
   const t = {
     en: {
@@ -70,6 +71,16 @@ function App() {
       auto: "自动"
     }
   }[lang];
+
+  // Fetch stats on load
+  useEffect(() => {
+    fetch('/api/stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data.processedCount) setTotalProcessed(data.processedCount);
+      })
+      .catch(err => console.error("Failed to load stats", err));
+  }, []);
 
   // Helper to guess pixel format from extension
   const getFormatFromExt = (filename: string): RawPixelFormat => {
@@ -171,6 +182,9 @@ function App() {
       });
 
       setResult(data);
+      // Increment local counter immediately to reflect success
+      setTotalProcessed(prev => prev + 1);
+
     } catch (error: any) {
       console.error(error);
       alert(error.message || t.processFailed);
@@ -248,7 +262,7 @@ function App() {
                    </h2>
                 </div>
                 <div className="w-full max-w-xl">
-                    <Dropzone onFileSelect={handleFileUpload} isUploading={isUploading} lang={lang} />
+                    <Dropzone onFileSelect={handleFileUpload} isUploading={isUploading} lang={lang} processedCount={totalProcessed} />
                 </div>
               </div>
             ) : (

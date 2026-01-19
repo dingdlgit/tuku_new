@@ -22,6 +22,7 @@ app.use(express.json());
 // Directories
 const UPLOAD_DIR = path.join(__dirname, 'uploads');
 const PROCESSED_DIR = path.join(__dirname, 'processed');
+const STATS_FILE = path.join(__dirname, 'stats.json');
 
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
 if (!fs.existsSync(PROCESSED_DIR)) fs.mkdirSync(PROCESSED_DIR);
@@ -61,6 +62,34 @@ setInterval(() => {
     });
   });
 }, CLEANUP_INTERVAL);
+
+// Helper: Stats Persistence
+function getStats() {
+  try {
+    if (!fs.existsSync(STATS_FILE)) {
+      const initial = { processedCount: 0 };
+      fs.writeFileSync(STATS_FILE, JSON.stringify(initial));
+      return initial;
+    }
+    const data = fs.readFileSync(STATS_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    console.error("Error reading stats:", error);
+    return { processedCount: 0 };
+  }
+}
+
+function incrementStats() {
+  try {
+    const stats = getStats();
+    stats.processedCount += 1;
+    fs.writeFileSync(STATS_FILE, JSON.stringify(stats));
+    return stats.processedCount;
+  } catch (error) {
+    console.error("Error updating stats:", error);
+    return 0;
+  }
+}
 
 // Serve static files
 app.use('/api/uploads', express.static(UPLOAD_DIR));
@@ -320,6 +349,11 @@ async function getSharpInstance(filePath, rawOptions = {}) {
 }
 
 // Routes
+app.get('/api/stats', (req, res) => {
+  const stats = getStats();
+  res.json(stats);
+});
+
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) {
     return res.status(400).json({ error: 'No file uploaded' });
@@ -563,6 +597,9 @@ app.post('/api/process', async (req, res) => {
         await pipeline.toFile(outputPath);
     }
     
+    // Increment stats on success
+    incrementStats();
+
     const stats = fs.statSync(outputPath);
     console.log(`Processing complete: ${outputFilename}`);
 

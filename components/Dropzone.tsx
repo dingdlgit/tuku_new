@@ -6,9 +6,10 @@ interface DropzoneProps {
   onFileSelect: (file: File) => void;
   isUploading: boolean;
   lang: Language;
+  processedCount: number;
 }
 
-export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, lang }) => {
+export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, lang, processedCount }) => {
   const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -19,7 +20,8 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
       formats: "JPG, PNG, WEBP, BMP, RAW (UYVY, NV21, RGBA...)",
       limit: "MAX 20MB",
       formatError: "ERROR: INVALID FILE FORMAT",
-      sizeError: "ERROR: FILE SIZE EXCEEDS 20MB LIMIT"
+      sizeError: "ERROR: FILE SIZE EXCEEDS 20MB LIMIT",
+      processedCount: "PROCESSED IMAGES"
     },
     zh: {
       uploading: "数据流上传中...",
@@ -27,7 +29,8 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
       formats: "支持 JPG, PNG, BMP, RAW (UYVY, NV21, RGBA...)",
       limit: "最大 20MB",
       formatError: "错误：不支持的文件格式",
-      sizeError: "错误：文件大小超过 20MB 限制"
+      sizeError: "错误：文件大小超过 20MB 限制",
+      processedCount: "已成功处理图片数"
     }
   }[lang];
 
@@ -146,6 +149,9 @@ export const Dropzone: React.FC<DropzoneProps> = ({ onFileSelect, isUploading, l
             </p>
             <p className="text-[10px] text-cyan-600 font-code font-bold border border-cyan-900/50 px-2 py-0.5 rounded bg-cyan-900/10">
               {t.limit}
+            </p>
+            <p className="text-[10px] text-slate-500 font-code mt-1 opacity-70 group-hover:opacity-100 transition-opacity">
+              {t.processedCount}: <span className="text-cyan-400 font-bold">{processedCount}</span>
             </p>
           </div>
         </div>
