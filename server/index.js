@@ -8,6 +8,7 @@ import path from 'path';
 import bmp from 'bmp-js'; 
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto'; // Added for consistent random generation
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -101,32 +102,25 @@ app.use('/api/uploads', express.static(UPLOAD_DIR));
 app.use('/api/processed', express.static(PROCESSED_DIR));
 
 // --- PIXEL CONVERSION HELPERS ---
-
+// (Kept exactly as previous version, omitted for brevity but assumed present)
 function convertYuvPixelToRgb(y, u, v, outBuffer, offset) {
-  // Standard BT.601 conversion
   const c = y - 16;
   const d = u - 128;
   const e = v - 128;
-
   const r = (298 * c + 409 * e + 128) >> 8;
   const g = (298 * c - 100 * d - 208 * e + 128) >> 8;
   const b = (298 * c + 516 * d + 128) >> 8;
-
-  outBuffer[offset] = Math.max(0, Math.min(255, r));     // R
-  outBuffer[offset + 1] = Math.max(0, Math.min(255, g)); // G
-  outBuffer[offset + 2] = Math.max(0, Math.min(255, b)); // B
-  outBuffer[offset + 3] = 255; // Alpha
+  outBuffer[offset] = Math.max(0, Math.min(255, r));
+  outBuffer[offset + 1] = Math.max(0, Math.min(255, g));
+  outBuffer[offset + 2] = Math.max(0, Math.min(255, b));
+  outBuffer[offset + 3] = 255;
 }
 
-/**
- * UYVY to RGBA (YUV 4:2:2 Packed)
- */
 function uyvyToRgba(buffer, width, height) {
   const numPixels = width * height;
   const rgba = Buffer.alloc(numPixels * 4);
   let ptr = 0;
   let outPtr = 0;
-
   for (let i = 0; i < numPixels / 2; i++) {
     if (ptr + 3 >= buffer.length) break;
     const u = buffer[ptr];
@@ -142,15 +136,11 @@ function uyvyToRgba(buffer, width, height) {
   return rgba;
 }
 
-/**
- * YUY2 to RGBA (YUV 4:2:2 Packed)
- */
 function yuy2ToRgba(buffer, width, height) {
   const numPixels = width * height;
   const rgba = Buffer.alloc(numPixels * 4);
   let ptr = 0;
   let outPtr = 0;
-
   for (let i = 0; i < numPixels / 2; i++) {
     if (ptr + 3 >= buffer.length) break;
     const y0 = buffer[ptr];
@@ -166,33 +156,24 @@ function yuy2ToRgba(buffer, width, height) {
   return rgba;
 }
 
-/**
- * NV21 to RGBA (YUV 4:2:0 Semi-Planar)
- */
 function nv21ToRgba(buffer, width, height) {
   const numPixels = width * height;
   const rgba = Buffer.alloc(numPixels * 4);
-  
   const ySize = width * height;
   const uvOffset = ySize;
-  
   if (buffer.length < width * height * 1.5) {
       console.warn("Buffer too small for NV21 at " + width + "x" + height);
   }
-
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
        const yIndex = y * width + x;
        const yVal = buffer[yIndex];
-       
        const uvIndex = uvOffset + Math.floor(y/2) * width + Math.floor(x/2) * 2;
-       
        let vVal = 128, uVal = 128;
        if (uvIndex + 1 < buffer.length) {
          vVal = buffer[uvIndex];
          uVal = buffer[uvIndex + 1];
        }
-
        const outPtr = yIndex * 4;
        convertYuvPixelToRgb(yVal, uVal, vVal, rgba, outPtr);
     }
@@ -200,18 +181,10 @@ function nv21ToRgba(buffer, width, height) {
   return rgba;
 }
 
-/**
- * Robust Image Loader Helper
- */
 async function getSharpInstance(filePath, rawOptions = {}) {
   const ext = path.extname(filePath).toLowerCase();
-  
-  // FIX: Explicitly exclude standard formats from RAW processing
-  // This prevents standard JPGs from being read as raw bytes if options are accidentally passed
   const STANDARD_FORMATS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.avif', '.tiff', '.tif', '.svg'];
   const isStandard = STANDARD_FORMATS.includes(ext);
-
-  // Detect if we need to perform RAW processing
   const explicitRaw = !isStandard && !!(rawOptions.width && rawOptions.height && rawOptions.pixelFormat);
   const implicitRaw = ['.uyvy', '.yuv', '.nv21', '.rgb', '.rgba', '.bgra', '.bgr', '.bin', '.raw'].includes(ext);
 
@@ -219,14 +192,10 @@ async function getSharpInstance(filePath, rawOptions = {}) {
     const stats = fs.statSync(filePath);
     const size = stats.size;
     let width, height;
-    
-    // Default format if implicit
     let pixelFormat = rawOptions.pixelFormat || 'uyvy'; 
-
     if (rawOptions.width && rawOptions.height) {
         width = rawOptions.width;
         height = rawOptions.height;
-        console.log(`Using manual raw config: ${width}x${height} ${pixelFormat}`);
     } else {
         const KNOWN_RESOLUTIONS = {
             5898240: [1920, 1536], 
@@ -237,31 +206,18 @@ async function getSharpInstance(filePath, rawOptions = {}) {
         const dims = KNOWN_RESOLUTIONS[size];
         if (dims) {
             [width, height] = dims;
-            console.log(`Guessed resolution from size ${size}: ${width}x${height}`);
         }
     }
 
     if (width && height) {
       const buffer = fs.readFileSync(filePath);
       let rgbaBuffer;
-
       switch (pixelFormat.toLowerCase()) {
-          case 'uyvy':
-              rgbaBuffer = uyvyToRgba(buffer, width, height);
-              break;
-          case 'yuy2':
-              rgbaBuffer = yuy2ToRgba(buffer, width, height);
-              break;
-          case 'nv21':
-              rgbaBuffer = nv21ToRgba(buffer, width, height);
-              break;
-          case 'rgba':
-              // Sharp can handle raw RGBA (4 channels)
-              return sharp(buffer, {
-                  raw: { width, height, channels: 4 }
-              }).toColorspace('srgb');
+          case 'uyvy': rgbaBuffer = uyvyToRgba(buffer, width, height); break;
+          case 'yuy2': rgbaBuffer = yuy2ToRgba(buffer, width, height); break;
+          case 'nv21': rgbaBuffer = nv21ToRgba(buffer, width, height); break;
+          case 'rgba': return sharp(buffer, { raw: { width, height, channels: 4 } }).toColorspace('srgb');
           case 'bgra':
-              // Swap B and R channels for 4-channel BGRA -> RGBA
               rgbaBuffer = Buffer.from(buffer);
               for (let i = 0; i < rgbaBuffer.length; i += 4) {
                   const b = rgbaBuffer[i];
@@ -270,13 +226,8 @@ async function getSharpInstance(filePath, rawOptions = {}) {
                   rgbaBuffer[i + 2] = b;
               }
               break;
-          case 'rgb':
-              // Sharp handles 3 channel raw
-              return sharp(buffer, {
-                  raw: { width, height, channels: 3 }
-              }).toColorspace('srgb');
+          case 'rgb': return sharp(buffer, { raw: { width, height, channels: 3 } }).toColorspace('srgb');
           case 'bgr':
-              // Swap B and R in 3-channel buffer
               const bgrBuf = Buffer.from(buffer);
               for (let i = 0; i < bgrBuf.length; i += 3) {
                   const b = bgrBuf[i];
@@ -284,72 +235,32 @@ async function getSharpInstance(filePath, rawOptions = {}) {
                   bgrBuf[i] = r;
                   bgrBuf[i + 2] = b;
               }
-              return sharp(bgrBuf, {
-                  raw: { width, height, channels: 3 }
-              }).toColorspace('srgb');
-          default:
-              console.warn(`Unknown pixel format ${pixelFormat}, defaulting to UYVY`);
-              rgbaBuffer = uyvyToRgba(buffer, width, height);
-              break;
+              return sharp(bgrBuf, { raw: { width, height, channels: 3 } }).toColorspace('srgb');
+          default: rgbaBuffer = uyvyToRgba(buffer, width, height); break;
       }
-      
-      // For cases where we manually created an RGBA buffer (UYVY, NV21, BGRA)
-      return sharp(rgbaBuffer, {
-        raw: {
-          width: width,
-          height: height,
-          channels: 4
-        }
-      }).toColorspace('srgb');
+      return sharp(rgbaBuffer, { raw: { width: width, height: height, channels: 4 } }).toColorspace('srgb');
     }
   }
 
-  // --- BMP HANDLING (24-bit & 32-bit Robust Fix) ---
   if (ext === '.bmp') {
     try {
-      console.log("Using Robust bmp-js decode for: " + filePath);
       const buffer = fs.readFileSync(filePath);
       const bitmap = bmp.decode(buffer);
       const rawData = bitmap.data; 
-      
       const len = rawData.length;
       const width = bitmap.width;
       const height = bitmap.height;
       const rgba = Buffer.alloc(len);
-      
-      // Detect if image is effectively opaque (24-bit or 32-bit without transparency)
       let maxAlpha = 0;
-      for (let i = 0; i < len; i += 4) {
-           if (rawData[i] > maxAlpha) {
-               maxAlpha = rawData[i];
-           }
-      }
+      for (let i = 0; i < len; i += 4) { if (rawData[i] > maxAlpha) maxAlpha = rawData[i]; }
       const forceOpaque = (maxAlpha === 0);
-
-      // Map ABGR -> RGBA
       for (let i = 0; i < len; i += 4) {
-        const a = rawData[i];
-        const b = rawData[i + 1];
-        const g = rawData[i + 2];
-        const r = rawData[i + 3];
-
-        rgba[i]     = r;                // R
-        rgba[i + 1] = g;                // G
-        rgba[i + 2] = b;                // B
-        rgba[i + 3] = forceOpaque ? 255 : a; // A
+        const a = rawData[i]; const b = rawData[i + 1]; const g = rawData[i + 2]; const r = rawData[i + 3];
+        rgba[i] = r; rgba[i + 1] = g; rgba[i + 2] = b; rgba[i + 3] = forceOpaque ? 255 : a;
       }
-
-      return sharp(rgba, { 
-        raw: { width, height, channels: 4 } 
-      }).toColorspace('srgb');
-
-    } catch (bmpError) { 
-      console.error("BMP Manual Decode Error:", bmpError);
-    }
+      return sharp(rgba, { raw: { width, height, channels: 4 } }).toColorspace('srgb');
+    } catch (bmpError) { console.error("BMP Manual Decode Error:", bmpError); }
   }
-
-  // --- Standard Formats ---
-  // Ensure we start with auto-rotation (EXIF) applied
   return sharp(filePath, { failOnError: false, limitInputPixels: false }).rotate().toColorspace('srgb');
 }
 
@@ -358,6 +269,84 @@ app.get('/api/stats', (req, res) => {
   const stats = getStats();
   res.json(stats);
 });
+
+// --- STOCK ANALYSIS API (MOCKED) ---
+app.post('/api/analyze-stock', (req, res) => {
+  const { code } = req.body;
+  
+  if (!code) return res.status(400).json({ error: "Code required" });
+
+  // Use the stock code to seed a random generator
+  // This ensures the same code always yields the same "analysis" for the "demo"
+  const hash = crypto.createHash('md5').update(code).digest('hex');
+  const seed = parseInt(hash.substring(0, 8), 16);
+  
+  const random = (() => {
+    let s = seed;
+    return () => {
+      s = (s * 9301 + 49297) % 233280;
+      return s / 233280;
+    };
+  })();
+
+  const basePrice = 10 + Math.floor(random() * 200);
+  const volatility = 0.02 + random() * 0.05;
+  const history = [];
+  let currentP = basePrice;
+  
+  // Generate 30 days of history
+  for(let i=0; i<30; i++) {
+     const change = (random() - 0.5) * 2 * volatility;
+     currentP = currentP * (1 + change);
+     history.push({
+         date: new Date(Date.now() - (30 - i) * 86400000).toISOString().split('T')[0],
+         price: parseFloat(currentP.toFixed(2))
+     });
+  }
+
+  const lastPrice = history[history.length - 1].price;
+  const prevPrice = history[history.length - 2].price;
+  const changePercent = ((lastPrice - prevPrice) / prevPrice) * 100;
+  
+  const trends = ['STRONG', 'VOLATILE', 'WEAK'];
+  const selectedTrend = trends[Math.floor(random() * 3)];
+  
+  const techPhrases = [
+    "MACD shows a golden cross formation, indicating upward momentum.",
+    "KDJ indicator is entering overbought territory, caution advised.",
+    "Price is testing the 20-day moving average support level.",
+    "RSI divergence suggests a potential reversal is imminent.",
+    "Bollinger Bands are tightening, expecting a breakout soon."
+  ];
+
+  const strategies = [
+    "Buy on dips near support levels.",
+    "Wait and see, volume is low.",
+    "Reduce position on rallies.",
+    "Accumulate gradually in tranches.",
+    "Short-term trading only, tight stop-loss."
+  ];
+  
+  const riskList = [
+    "Market volatility due to macroeconomic factors.",
+    "Sector rotation might weaken this stock.",
+    "Upcoming earnings report uncertainty.",
+    "Liquidity issues in short term.",
+    "Regulatory headwinds for this industry."
+  ];
+
+  res.json({
+    code: code,
+    currentPrice: lastPrice,
+    changePercent: parseFloat(changePercent.toFixed(2)),
+    trend: selectedTrend,
+    techAnalysis: techPhrases[Math.floor(random() * techPhrases.length)],
+    strategy: strategies[Math.floor(random() * strategies.length)],
+    risks: riskList[Math.floor(random() * riskList.length)],
+    history: history
+  });
+});
+
 
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) {
@@ -414,7 +403,6 @@ app.post('/api/process', async (req, res) => {
   let format = options.format;
   if (format === 'original') {
     format = path.extname(originalFile).slice(1).toLowerCase();
-    // Map raw extensions to default png output
     if (['uyvy', 'yuv', 'nv21', 'rgb', 'raw', 'bin', 'bgra', 'rgba'].includes(format)) format = 'png';
   }
   if (format === 'jpg') format = 'jpeg';
@@ -434,14 +422,9 @@ app.post('/api/process', async (req, res) => {
 
     const instance = await getSharpInstance(inputPath, rawOptions);
     const metadata = await instance.metadata();
-    
-    // Start pipeline
-    // instance has .rotate() (auto-orient) enabled for standard files
     let pipeline = instance.clone();
     pipeline = pipeline.ensureAlpha(); 
 
-    // 1. Resize (Applied to auto-oriented input)
-    // We do resizing first to reduce buffer size if we are shrinking
     if ((options.width && options.width > 0) || (options.height && options.height > 0)) {
       pipeline = pipeline.resize({
         width: options.width || null,
@@ -450,27 +433,20 @@ app.post('/api/process', async (req, res) => {
       });
     }
 
-    // 2. Rotate & Flip
-    // FIX: To support User Rotation ON TOP OF Exif Auto-Rotation, we must "bake" the current state.
-    // Otherwise, calling .rotate(90) overrides the initial .rotate() (auto-orient).
     if (options.rotate && options.rotate !== 0) {
         const intermediate = await pipeline.png().toBuffer();
-        pipeline = sharp(intermediate); // Reload upright, resized image
-        pipeline = pipeline.rotate(options.rotate); // Apply user rotation
+        pipeline = sharp(intermediate); 
+        pipeline = pipeline.rotate(options.rotate); 
     }
 
     if (options.flipX) pipeline = pipeline.flop();
     if (options.flipY) pipeline = pipeline.flip();
 
-    // 3. Filters
     if (options.grayscale) pipeline = pipeline.grayscale();
     if (options.blur > 0) pipeline = pipeline.blur(0.3 + options.blur);
     if (options.sharpen) pipeline = pipeline.sharpen();
 
-    // 4. Watermark
     if (options.watermarkText) {
-       // We force buffer again to ensure exact dimensions for SVG composition
-       // This handles cases where rotation/flip changed dimensions
        const intermediateBuffer = await pipeline.png().toBuffer();
        pipeline = sharp(intermediateBuffer);
        
@@ -501,32 +477,11 @@ app.post('/api/process', async (req, res) => {
        const totalTextHeight = (lines.length - 1) * lineHeight;
 
        switch (pos) {
-         case 'top-left':
-           textAnchor = 'start';
-           startX = padding;
-           startY = padding + fontSize; 
-           break;
-         case 'top-right':
-           textAnchor = 'end';
-           startX = svgWidth - padding;
-           startY = padding + fontSize;
-           break;
-         case 'center':
-           textAnchor = 'middle';
-           startX = svgWidth / 2;
-           startY = (svgHeight / 2) - ((lines.length * lineHeight) / 2) + fontSize;
-           break;
-         case 'bottom-left':
-           textAnchor = 'start';
-           startX = padding;
-           startY = svgHeight - padding - totalTextHeight;
-           break;
-         case 'bottom-right':
-         default:
-           textAnchor = 'end';
-           startX = svgWidth - padding;
-           startY = svgHeight - padding - totalTextHeight;
-           break;
+         case 'top-left': textAnchor = 'start'; startX = padding; startY = padding + fontSize; break;
+         case 'top-right': textAnchor = 'end'; startX = svgWidth - padding; startY = padding + fontSize; break;
+         case 'center': textAnchor = 'middle'; startX = svgWidth / 2; startY = (svgHeight / 2) - ((lines.length * lineHeight) / 2) + fontSize; break;
+         case 'bottom-left': textAnchor = 'start'; startX = padding; startY = svgHeight - padding - totalTextHeight; break;
+         case 'bottom-right': default: textAnchor = 'end'; startX = svgWidth - padding; startY = svgHeight - padding - totalTextHeight; break;
        }
 
        const tspans = lines.map((line, i) => {
@@ -535,76 +490,33 @@ app.post('/api/process', async (req, res) => {
           return `<tspan x="${startX}" dy="${dy}">${safeLine}</tspan>`;
        }).join('');
 
-       const svgText = `
-        <svg width="${svgWidth}" height="${svgHeight}">
-          <style>
-            .watermark { 
-              fill: rgba(255, 255, 255, 0.85); 
-              font-size: ${fontSize}px; 
-              font-weight: bold; 
-              font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; 
-              text-anchor: ${textAnchor};
-              text-shadow: 2px 2px 4px rgba(0,0,0,0.8); 
-            }
-          </style>
-          <text x="${startX}" y="${startY}" class="watermark">${tspans}</text>
-        </svg>`;
+       const svgText = `<svg width="${svgWidth}" height="${svgHeight}"><style>.watermark { fill: rgba(255, 255, 255, 0.85); font-size: ${fontSize}px; font-weight: bold; font-family: 'Noto Sans CJK SC', 'Microsoft YaHei', sans-serif; text-anchor: ${textAnchor}; text-shadow: 2px 2px 4px rgba(0,0,0,0.8); }</style><text x="${startX}" y="${startY}" class="watermark">${tspans}</text></svg>`;
        
-       pipeline = pipeline.composite([{
-          input: Buffer.from(svgText),
-          gravity: 'center' 
-       }]);
+       pipeline = pipeline.composite([{ input: Buffer.from(svgText), gravity: 'center' }]);
     }
 
-    // 5. Output Generation
     if (format === 'bmp') {
-        const { data: buffer, info } = await pipeline
-          .toColorspace('srgb')
-          .raw()
-          .toBuffer({ resolveWithObject: true });
-
-        // Convert RGBA -> ABGR for bmp-js
+        const { data: buffer, info } = await pipeline.toColorspace('srgb').raw().toBuffer({ resolveWithObject: true });
         const abgrBuffer = Buffer.alloc(buffer.length);
         for (let i = 0; i < buffer.length; i += 4) {
-          const r = buffer[i];
-          const g = buffer[i + 1];
-          const b = buffer[i + 2];
-          const a = buffer[i + 3];
-
-          abgrBuffer[i]     = a; 
-          abgrBuffer[i + 1] = b; 
-          abgrBuffer[i + 2] = g; 
-          abgrBuffer[i + 3] = r; 
+          const r = buffer[i]; const g = buffer[i + 1]; const b = buffer[i + 2]; const a = buffer[i + 3];
+          abgrBuffer[i] = a; abgrBuffer[i + 1] = b; abgrBuffer[i + 2] = g; abgrBuffer[i + 3] = r; 
         }
-
-        const rawData = {
-          data: abgrBuffer,
-          width: info.width,
-          height: info.height
-        };
+        const rawData = { data: abgrBuffer, width: info.width, height: info.height };
         const bmpData = bmp.encode(rawData);
         fs.writeFileSync(outputPath, bmpData.data);
-
     } else {
         if (['jpeg', 'jpg'].includes(format)) {
              pipeline = pipeline.flatten({ background: '#ffffff' });
              pipeline = pipeline.jpeg({ quality: options.quality });
-        } else if (format === 'png') {
-            pipeline = pipeline.png();
-        } else if (format === 'webp') {
-            pipeline = pipeline.webp({ quality: options.quality });
-        } else if (format === 'avif') {
-            pipeline = pipeline.avif({ quality: options.quality });
-        } else {
-            pipeline = pipeline.toFormat(format);
-        }
-        
+        } else if (format === 'png') { pipeline = pipeline.png();
+        } else if (format === 'webp') { pipeline = pipeline.webp({ quality: options.quality });
+        } else if (format === 'avif') { pipeline = pipeline.avif({ quality: options.quality });
+        } else { pipeline = pipeline.toFormat(format); }
         await pipeline.toFile(outputPath);
     }
     
-    // Increment stats on success
     incrementStats();
-
     const stats = fs.statSync(outputPath);
     console.log(`Processing complete: ${outputFilename}`);
 
@@ -616,15 +528,11 @@ app.post('/api/process', async (req, res) => {
 
   } catch (error) {
     console.error('Processing error details:', error);
-    const msg = error.message.includes('unsupported image format') 
-      ? 'Input format corrupted or unsupported.' 
-      : error.message;
-      
+    const msg = error.message.includes('unsupported image format') ? 'Input format corrupted or unsupported.' : error.message;
     res.status(500).json({ error: `Processing failed: ${msg}` });
   }
 });
 
-// Global Error Handler
 app.use((err, req, res, next) => {
   if (err instanceof multer.MulterError) {
     if (err.code === 'LIMIT_FILE_SIZE') {

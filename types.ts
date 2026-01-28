@@ -52,3 +52,21 @@ export interface ProcessResponse {
   filename: string;
   size: number;
 }
+
+// --- Stock Analysis Types ---
+
+export interface StockDataPoint {
+  date: string;
+  price: number;
+}
+
+export interface StockAnalysisResult {
+  code: string;
+  currentPrice: number;
+  changePercent: number;
+  trend: 'STRONG' | 'VOLATILE' | 'WEAK'; // 偏强 / 震荡 / 偏弱
+  techAnalysis: string; // 技术面解读
+  strategy: string; // 操作思路
+  risks: string; // 风险点
+  history: StockDataPoint[]; // For charting
+}
