@@ -102,7 +102,6 @@ app.use('/api/uploads', express.static(UPLOAD_DIR));
 app.use('/api/processed', express.static(PROCESSED_DIR));
 
 // --- PIXEL CONVERSION HELPERS ---
-// (Kept exactly as previous version, omitted for brevity but assumed present)
 function convertYuvPixelToRgb(y, u, v, outBuffer, offset) {
   const c = y - 16;
   const d = u - 128;
@@ -270,14 +269,70 @@ app.get('/api/stats', (req, res) => {
   res.json(stats);
 });
 
-// --- STOCK ANALYSIS API (MOCKED) ---
+// --- STOCK ANALYSIS API (ENHANCED MOCK) ---
 app.post('/api/analyze-stock', (req, res) => {
-  const { code } = req.body;
+  let { code } = req.body;
   
   if (!code) return res.status(400).json({ error: "Code required" });
+  
+  // Normalize code
+  code = code.toUpperCase().trim();
 
-  // Use the stock code to seed a random generator
-  // This ensures the same code always yields the same "analysis" for the "demo"
+  // --- Market Detection & Configuration ---
+  let market = "UNKNOWN";
+  let volatilityMultiplier = 1.0;
+  let priceBase = 100;
+
+  // 1. STAR Market (科创板) - 688xxx
+  if (/^(SH)?688\d{3}$/.test(code)) {
+    market = "CN - STAR Market (科创板)";
+    volatilityMultiplier = 1.5; // Higher volatility
+    priceBase = 60;
+  } 
+  // 2. ChiNext (创业板) - 300xxx, 301xxx
+  else if (/^(SZ)?30[01]\d{3}$/.test(code)) {
+    market = "CN - ChiNext (创业板)";
+    volatilityMultiplier = 1.4;
+    priceBase = 40;
+  }
+  // 3. Shanghai Main (沪市主板) - 60xxxx
+  else if (/^(SH)?60\d{4}$/.test(code)) {
+    market = "CN - SH Main (沪市主板)";
+    volatilityMultiplier = 0.8; // More stable
+    priceBase = 15;
+  }
+  // 4. Shenzhen Main (深市主板) - 00xxxx
+  else if (/^(SZ)?00\d{4}$/.test(code)) {
+    market = "CN - SZ Main (深市主板)";
+    volatilityMultiplier = 1.0;
+    priceBase = 12;
+  }
+  // 5. Beijing Exchange (北交所) - 8xxxxx, 4xxxxx
+  else if (/^(BJ)?(8|4)\d{5}$/.test(code)) {
+    market = "CN - Beijing SE (北交所)";
+    volatilityMultiplier = 1.3;
+    priceBase = 10;
+  }
+  // 6. Hong Kong (港股) - 5 digits (0xxxx)
+  else if (/^\d{5}$/.test(code) || /^HK\d{5}$/.test(code)) {
+    market = "HK - HKEX (港股)";
+    volatilityMultiplier = 1.2;
+    priceBase = 50; 
+  }
+  // 7. US Stocks (美股) - Letters only
+  else if (/^[A-Z]{1,5}$/.test(code)) {
+    market = "US - NYSE/NASDAQ (美股)";
+    volatilityMultiplier = 1.1;
+    priceBase = 150;
+  }
+  // Fallback
+  else {
+    market = "Global/OTC (其他市场)";
+    volatilityMultiplier = 1.0;
+    priceBase = 100;
+  }
+
+  // Consistent Random Generator based on code
   const hash = crypto.createHash('md5').update(code).digest('hex');
   const seed = parseInt(hash.substring(0, 8), 16);
   
@@ -289,17 +344,30 @@ app.post('/api/analyze-stock', (req, res) => {
     };
   })();
 
-  const basePrice = 10 + Math.floor(random() * 200);
-  const volatility = 0.02 + random() * 0.05;
-  const history = [];
-  let currentP = basePrice;
+  // Generate Base Price based on hash magnitude to vary it from the default priceBase
+  const magnitude = (seed % 5); 
+  let startPrice = priceBase;
+  if (magnitude === 0) startPrice *= 0.5; // Penny stock
+  if (magnitude === 4) startPrice *= 5;   // High priced
   
-  // Generate 30 days of history
-  for(let i=0; i<30; i++) {
+  // Add some randomness to start price
+  startPrice += (random() * startPrice * 0.2);
+
+  const volatility = (0.01 + random() * 0.04) * volatilityMultiplier;
+  const history = [];
+  let currentP = startPrice;
+  
+  // Generate 60 days of history for a better chart
+  const days = 60;
+  for(let i=0; i<days; i++) {
+     // Random walk
      const change = (random() - 0.5) * 2 * volatility;
      currentP = currentP * (1 + change);
+     // Prevent negative prices
+     if(currentP < 0.01) currentP = 0.01;
+     
      history.push({
-         date: new Date(Date.now() - (30 - i) * 86400000).toISOString().split('T')[0],
+         date: new Date(Date.now() - (days - i) * 86400000).toISOString().split('T')[0],
          price: parseFloat(currentP.toFixed(2))
      });
   }
@@ -308,9 +376,15 @@ app.post('/api/analyze-stock', (req, res) => {
   const prevPrice = history[history.length - 2].price;
   const changePercent = ((lastPrice - prevPrice) / prevPrice) * 100;
   
-  const trends = ['STRONG', 'VOLATILE', 'WEAK'];
-  const selectedTrend = trends[Math.floor(random() * 3)];
+  // Determine Trend based on overall movement in history
+  const startP = history[0].price;
+  const totalChange = (lastPrice - startP) / startP;
   
+  let selectedTrend = 'VOLATILE';
+  if (totalChange > 0.15) selectedTrend = 'STRONG';
+  else if (totalChange < -0.15) selectedTrend = 'WEAK';
+  
+  // Customize analysis text slightly based on market
   const techPhrases = [
     "MACD shows a golden cross formation, indicating upward momentum.",
     "KDJ indicator is entering overbought territory, caution advised.",
@@ -337,6 +411,7 @@ app.post('/api/analyze-stock', (req, res) => {
 
   res.json({
     code: code,
+    market: market,
     currentPrice: lastPrice,
     changePercent: parseFloat(changePercent.toFixed(2)),
     trend: selectedTrend,

@@ -15,7 +15,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
   const t = {
     en: {
       title: "QUANTUM FINANCE ANALYZER",
-      inputPlaceholder: "ENTER STOCK CODE (e.g., 600519)",
+      inputPlaceholder: "STOCK CODE (e.g. 600519, 300750, 00700, AAPL)",
       analyze: "INITIATE ANALYSIS",
       analyzing: "COMPUTING...",
       trend: "TREND JUDGMENT",
@@ -25,11 +25,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       strong: "STRONG",
       volatile: "VOLATILE",
       weak: "WEAK",
-      chartTitle: "30-DAY PRICE ACTION SIMULATION"
+      chartTitle: "60-DAY PRICE ACTION SIMULATION"
     },
     zh: {
       title: "量子金融分析仪",
-      inputPlaceholder: "输入股票代码 (如 600519)",
+      inputPlaceholder: "输入代码 (如 600519, 创业板300xxx, 港股00700)",
       analyze: "开始分析",
       analyzing: "计算中...",
       trend: "当前趋势判断",
@@ -39,7 +39,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       strong: "偏强",
       volatile: "震荡",
       weak: "偏弱",
-      chartTitle: "30日资金流向模拟"
+      chartTitle: "60日资金流向模拟"
     }
   }[lang];
 
@@ -125,7 +125,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     // Draw Points
     ctx.fillStyle = '#fff';
     prices.forEach((price, i) => {
-        if (i % 5 === 0 || i === prices.length - 1) { // Sparse points
+        if (i % 8 === 0 || i === prices.length - 1) { // Sparse points
             const x = padding + i * stepX;
             const y = h - (padding + ((price - min) / range) * (h - padding * 2));
             ctx.beginPath();
@@ -160,6 +160,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                onChange={(e) => setCode(e.target.value)}
                placeholder={t.inputPlaceholder}
                className="flex-1 bg-transparent border-none text-white font-code px-4 focus:outline-none placeholder-slate-600 tracking-wider"
+               onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()}
              />
              <button 
                onClick={handleAnalyze}
@@ -177,8 +178,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                 <div className="space-y-6">
                    {/* Price Card */}
                    <div className="bg-slate-900/60 border border-slate-700 p-6 relative overflow-hidden group">
-                      <div className="absolute top-0 right-0 p-2 text-[10px] text-slate-500 font-code">{data.code}</div>
-                      <div className="flex items-end gap-4">
+                      <div className="absolute top-0 right-0 flex flex-col items-end p-2">
+                         <div className="text-[12px] text-purple-400 font-tech font-bold tracking-wider">{data.market}</div>
+                         <div className="text-[10px] text-slate-500 font-code">{data.code}</div>
+                      </div>
+                      <div className="flex items-end gap-4 mt-4">
                          <span className="text-5xl font-code font-bold text-white tracking-tighter">{data.currentPrice.toFixed(2)}</span>
                          <span className={`text-lg font-code font-bold ${data.changePercent >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                             {data.changePercent >= 0 ? '+' : ''}{data.changePercent}%

@@ -62,6 +62,7 @@ export interface StockDataPoint {
 
 export interface StockAnalysisResult {
   code: string;
+  market: string; // Market identifier (e.g., A-Share, HK, US)
   currentPrice: number;
   changePercent: number;
   trend: 'STRONG' | 'VOLATILE' | 'WEAK'; // 偏强 / 震荡 / 偏弱
