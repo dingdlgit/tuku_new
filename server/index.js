@@ -97,15 +97,29 @@ async function fetchRealTimeQuote(ticker) {
   const secid = getSecId(ticker);
   if (!secid) return null;
   try {
-    const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f47,f48,f50,f57,f58,f60,f161,f162,f163,f164,f167,f168,f169,f170,f171,f116`;
+    // Added f59 for price precision
+    const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f47,f48,f50,f57,f58,f59,f60,f161,f162,f163,f164,f167,f168,f169,f170,f171,f116`;
     const response = await fetch(url);
     const json = await response.json();
     if (!json.data) return null;
     const d = json.data;
+    
+    // Dynamic scaling based on f59 (precision)
+    const scale = Math.pow(10, d.f59 || 2);
+    
     return {
-      name: d.f58, price: d.f43 / 100, open: d.f46 / 100, high: d.f44 / 100, low: d.f45 / 100, 
-      vol: d.f47, turnover: d.f168 / 100, changePercent: d.f170 / 100, 
-      pe: d.f162 / 100, pb: d.f167 / 100, high52: d.f171 / 100, low52: d.f168 / 100,
+      name: d.f58, 
+      price: d.f43 / scale, 
+      open: d.f46 / scale, 
+      high: d.f44 / scale, 
+      low: d.f45 / scale, 
+      vol: d.f47, 
+      turnover: d.f168 / 100, 
+      changePercent: d.f170 / 100, 
+      pe: d.f162 / 100, 
+      pb: d.f167 / 100, 
+      high52: d.f171 / scale, 
+      low52: d.f168 / scale,
       isETF: /ETF/.test(d.f58) || /基金/.test(d.f58)
     };
   } catch (e) { return null; }
@@ -155,7 +169,7 @@ app.post('/api/analyze-stock', async (req, res) => {
   const modelName = 'gemini-3-flash-preview';
 
   // Last 5 days for context
-  const trendContext = history.slice(-5).map(h => `${h.date}: ${h.close}`).join(', ');
+  const trendContext = history.length > 0 ? history.slice(-5).map(h => `${h.date}: ${h.close}`).join(', ') : 'No recent history';
   const contextData = realQuote ? 
     `Real-time Quote for ${ticker} (${realQuote.name}): Price: ${realQuote.price}, Change: ${realQuote.changePercent}%, PE: ${realQuote.pe}, PB: ${realQuote.pb}. Recent Trend: [${trendContext}].` :
     `No real-time data found for ${ticker}. Analyze based on internal knowledge.`;
@@ -200,15 +214,17 @@ app.post('/api/analyze-stock', async (req, res) => {
     };
 
     // Calculate Moving Averages on actual history
-    for (let i = 0; i < finalData.history.length; i++) {
-      const calcMA = (period) => {
-        if (i < period - 1) return null;
-        const sum = finalData.history.slice(i - period + 1, i + 1).reduce((acc, curr) => acc + curr.close, 0);
-        return parseFloat((sum / period).toFixed(3));
-      };
-      finalData.history[i].ma5 = calcMA(5);
-      finalData.history[i].ma10 = calcMA(10);
-      finalData.history[i].ma20 = calcMA(20);
+    if (finalData.history && finalData.history.length > 0) {
+      for (let i = 0; i < finalData.history.length; i++) {
+        const calcMA = (period) => {
+          if (i < period - 1) return null;
+          const sum = finalData.history.slice(i - period + 1, i + 1).reduce((acc, curr) => acc + curr.close, 0);
+          return parseFloat((sum / period).toFixed(3));
+        };
+        finalData.history[i].ma5 = calcMA(5);
+        finalData.history[i].ma10 = calcMA(10);
+        finalData.history[i].ma20 = calcMA(20);
+      }
     }
 
     stockCache.set(ticker, { data: finalData, timestamp: Date.now() });
