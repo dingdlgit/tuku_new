@@ -35,6 +35,11 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
+// Check API Key
+if (!process.env.API_KEY) {
+  console.warn("CRITICAL: API_KEY environment variable is not set. Gemini AI features will fail.");
+}
+
 // Stats Logic
 function getStats() {
   try {
@@ -109,10 +114,13 @@ app.post('/api/process', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Processing failed' }); }
 });
 
-// --- REAL-TIME STOCK ANALYSIS VIA GEMINI (BACKEND) ---
 app.post('/api/analyze-stock', async (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: "Stock code required" });
+
+  if (!process.env.API_KEY) {
+    return res.status(500).json({ error: "Server missing API_KEY. Please set it in your environment." });
+  }
 
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
@@ -132,7 +140,6 @@ app.post('/api/analyze-stock', async (req, res) => {
     const responseText = result.text;
     const data = JSON.parse(responseText);
 
-    // Generate simulated history anchored to real current price
     const history = [];
     let p = data.currentPrice / (1 + (data.changePercent || 0) / 100);
     for (let i = 0; i < 180; i++) {
@@ -149,7 +156,6 @@ app.post('/api/analyze-stock', async (req, res) => {
       p = close;
     }
     
-    // Add MAs
     for (let i = 0; i < history.length; i++) {
         const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
         history[i].ma5 = ma(5);

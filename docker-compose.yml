@@ -16,6 +16,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
+    environment:
+      - API_KEY=${API_KEY}
     volumes:
       - ./server/uploads:/app/uploads
       - ./server/processed:/app/processed
