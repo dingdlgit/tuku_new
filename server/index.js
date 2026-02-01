@@ -24,7 +24,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
 const stockCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 mins for successful results
+const CACHE_TTL = 5 * 60 * 1000; 
 
 [UPLOAD_DIR, PROCESSED_DIR, DATA_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -83,13 +83,11 @@ app.post('/api/process', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Fail' }); }
 });
 
-// --- ENHANCED FINANCIAL DATA FETCHER ---
-
 function getSecId(ticker) {
-  if (/^[6]/.test(ticker)) return `1.${ticker}`; // SH
-  if (/^[03]/.test(ticker)) return `0.${ticker}`; // SZ
-  if (/^[5]/.test(ticker)) return `1.${ticker}`; // SH ETF
-  if (/^[1]/.test(ticker)) return `0.${ticker}`; // SZ ETF
+  if (/^[6]/.test(ticker)) return `1.${ticker}`; 
+  if (/^[03]/.test(ticker)) return `0.${ticker}`; 
+  if (/^[5]/.test(ticker)) return `1.${ticker}`; 
+  if (/^[1]/.test(ticker)) return `0.${ticker}`; 
   return null;
 }
 
@@ -129,6 +127,9 @@ async function fetchHistoricalKLines(ticker, limit = 180) {
     const json = await response.json();
     if (!json.data || !json.data.klines) return [];
     
+    const today = new Date();
+    today.setHours(23, 59, 59, 999);
+
     return json.data.klines.map(line => {
       const [date, open, close, high, low, vol, amount, amplitude, pctChange, changeAmt, turnover] = line.split(',');
       return {
@@ -139,7 +140,7 @@ async function fetchHistoricalKLines(ticker, limit = 180) {
         low: parseFloat(low),
         volume: parseFloat(vol)
       };
-    });
+    }).filter(k => new Date(k.date) <= today); // Filter out potential future date placeholders
   } catch (e) { return []; }
 }
 
@@ -151,7 +152,6 @@ app.post('/api/analyze-stock', async (req, res) => {
 
   const cacheKey = `${ticker}_${userLang}`;
 
-  // Use cache only if AI succeeded in the previous run
   if (!forceSearch && stockCache.has(cacheKey)) {
     const cached = stockCache.get(cacheKey);
     if (Date.now() - cached.timestamp < CACHE_TTL) {
@@ -185,22 +185,22 @@ app.post('/api/analyze-stock', async (req, res) => {
   const targetLangName = userLang === 'zh' ? 'Chinese (Simplified)' : 'English';
 
   const contextData = realQuote ? 
-    `Asset: ${ticker} (${realQuote.name}). Price: ${realQuote.price}, Change: ${realQuote.changePercent}%. PE: ${realQuote.pe}, PB: ${realQuote.pb}. 180-Day Range: [${low180.toFixed(3)} - ${high180.toFixed(3)}]. Recent 10-day Close Prices: [${trendContext}].` :
-    `No real-time data for ${ticker}. Perform general analysis.`;
+    `Asset: ${ticker} (${realQuote.name}). Current Price: ${realQuote.price}, Change: ${realQuote.changePercent}%. Metrics: PE=${realQuote.pe}, PB=${realQuote.pb}. 180-Day Statistics: Range [${low180.toFixed(3)} - ${high180.toFixed(3)}]. Recent 10-day Closes: [${trendContext}].` :
+    `No real-time data for ${ticker}. Perform general market analysis based on historical knowledge.`;
 
   const prompt = `${contextData}
-  As a Senior Quant Strategist, provide a comprehensive market report.
-  CRITICAL: You MUST write ALL qualitative fields (shortTerm, longTerm, trendFollower, and risks) in ${targetLangName}.
-  Market Sentiment should be 0-100. Strategy advice should be actionable based on the provided trend.
-  OUTPUT JSON ONLY:
+  As an Expert Financial Analyst, generate a structured market intelligence report.
+  CRITICAL: Every single word of the "shortTerm", "longTerm", "trendFollower", and "risks" fields MUST be in ${targetLangName}. 
+  Do not include any English technical terms in those fields if the language is Chinese.
+  OUTPUT JSON FORMAT ONLY:
   {
-    "sentiment": number,
+    "sentiment": number (0-100),
     "strategyAdvice": { 
-      "shortTerm": "string in ${targetLangName}", 
-      "longTerm": "string in ${targetLangName}", 
-      "trendFollower": "string in ${targetLangName}" 
+      "shortTerm": "Advice in ${targetLangName}", 
+      "longTerm": "Advice in ${targetLangName}", 
+      "trendFollower": "Advice in ${targetLangName}" 
     },
-    "risks": ["string array in ${targetLangName}"]
+    "risks": ["Risk 1 in ${targetLangName}", "Risk 2 in ${targetLangName}"]
   }`;
 
   try {
@@ -225,7 +225,7 @@ app.post('/api/analyze-stock', async (req, res) => {
       sentiment: aiData.sentiment,
       strategyAdvice: aiData.strategyAdvice,
       risks: aiData.risks,
-      dataSource: realQuote ? "Real-time + Historical API" : "AI Simulation",
+      dataSource: realQuote ? "Real-time + Historical API" : "AI Simulation Only",
       lastUpdated: new Date().toISOString(),
       history: history
     };
@@ -243,16 +243,14 @@ app.post('/api/analyze-stock', async (req, res) => {
       }
     }
 
-    // Success: Cache it
     stockCache.set(cacheKey, { data: finalData, timestamp: Date.now() });
     return res.json(finalData);
 
   } catch (err) {
-    // Failure: Return real data but DO NOT cache the "Busy" result long-term
-    const isRateLimit = err.message?.includes('429') || err.message?.includes('quota');
+    const isRateLimit = err.message?.includes('429') || err.message?.includes('quota') || err.message?.includes('limit');
     const errorMsg = isRateLimit 
-      ? (userLang === 'zh' ? "AI 接口限频，请 1 分钟后再试" : "AI Rate limited. Try again in 1 min.")
-      : (userLang === 'zh' ? "AI 引擎暂时无法生成策略" : "AI engine unable to generate advice");
+      ? (userLang === 'zh' ? "AI 接口限频 (Google Rate Limit)，请稍后再试" : "AI Rate limited. Please retry in 1 minute.")
+      : (userLang === 'zh' ? "AI 引擎暂时无法生成策略 (AI Busy)" : "AI engine overloaded. Showing raw data only.");
 
     if (realQuote) {
       return res.json({
