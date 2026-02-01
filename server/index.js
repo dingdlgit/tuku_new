@@ -24,7 +24,6 @@ const PROCESSED_DIR = path.join(__dirname, 'processed');
 const DATA_DIR = path.join(__dirname, 'data');
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
-// Ensure directories exist
 [UPLOAD_DIR, PROCESSED_DIR, DATA_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
@@ -34,14 +33,6 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => cb(null, uuidv4() + path.extname(file.originalname))
 });
 const upload = multer({ storage });
-
-// Startup check - this shows in docker logs
-if (!process.env.API_KEY) {
-  console.log("------------------------------------------------------------------");
-  console.log("WARNING: API_KEY is missing! Stock analysis will NOT work.");
-  console.log("Please run: export API_KEY=your_key && docker compose up -d");
-  console.log("------------------------------------------------------------------");
-}
 
 function getStats() {
   try {
@@ -121,45 +112,60 @@ app.post('/api/analyze-stock', async (req, res) => {
   
   if (!process.env.API_KEY || process.env.API_KEY === "undefined" || process.env.API_KEY === "") {
     return res.status(500).json({ 
-        error: "Backend API_KEY is missing. Please set it in your .env file or export it before running docker compose." 
+        error: "Backend API_KEY is missing. Please set it in your environment." 
     });
   }
 
-  try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-    const prompt = `Find real-time financial information for stock "${code}". 
-    Important: If code is 000021, name is "深科技".
-    Return result ONLY in valid JSON format: {
-      "name": "string",
-      "market": "string",
-      "currentPrice": number,
-      "changeAmount": number,
-      "changePercent": number,
-      "pe": number,
-      "pb": number,
-      "turnoverRate": number,
-      "amplitude": number,
-      "trend": "STRONG|VOLATILE|WEAK",
-      "support": number,
-      "resistance": number,
-      "sentiment": number,
-      "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
-      "risks": ["string"]
-    }`;
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const prompt = `Find real-time financial information for stock "${code}". 
+  If code is 000021, name is "深科技".
+  Return result ONLY in valid JSON format: {
+    "name": "string",
+    "market": "string",
+    "currentPrice": number,
+    "changeAmount": number,
+    "changePercent": number,
+    "pe": number,
+    "pb": number,
+    "turnoverRate": number,
+    "amplitude": number,
+    "trend": "STRONG|VOLATILE|WEAK",
+    "support": number,
+    "resistance": number,
+    "sentiment": number,
+    "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
+    "risks": ["string"]
+  }`;
 
-    const result = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json"
-      }
-    });
+  try {
+    // Attempt 1: With Google Search (Grounded)
+    let result;
+    try {
+      result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json"
+        }
+      });
+    } catch (searchError) {
+      console.warn("Search tool failed or restricted, falling back to basic model...", searchError.message);
+      // Attempt 2: Without Google Search (Fallback)
+      result = await ai.models.generateContent({
+        model: 'gemini-3-flash-preview',
+        contents: prompt + " (Please use your internal knowledge as Search Tool is unavailable)",
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
+    }
 
     const data = JSON.parse(result.text);
 
+    // Generate Chart History
     const history = [];
-    let p = data.currentPrice / (1 + (data.changePercent || 0) / 100);
+    let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
     for (let i = 0; i < 180; i++) {
       const change = (Math.random() - 0.5) * 0.04;
       const close = p * (1 + change);
@@ -183,8 +189,11 @@ app.post('/api/analyze-stock', async (req, res) => {
 
     res.json({ ...data, history, code });
   } catch (err) {
-    console.error("Gemini Backend Error:", err);
-    res.status(500).json({ error: "Gemini AI processing failed. Check if your API Key is valid and has Search tool access." });
+    console.error("Gemini Final Error:", err);
+    res.status(500).json({ 
+      error: "Gemini API Error: " + err.message,
+      suggestion: "If you see 'region not supported', try using a VPN on your server or checking your Google Project settings."
+    });
   }
 });
 
