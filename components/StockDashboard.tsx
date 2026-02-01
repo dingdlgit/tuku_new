@@ -1,6 +1,5 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { GoogleGenAI } from "@google/genai";
 import { StockAnalysisResult, Language, OHLC } from '../types';
 
 interface StockDashboardProps {
@@ -11,7 +10,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<StockAnalysisResult | null>(null);
-  const [sources, setSources] = useState<{title: string, uri: string}[]>([]);
   const mainCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const t = {
@@ -29,7 +27,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       risk: "RISK PROFILE",
       sentiment: "SENTIMENT",
       chartTitle: "180-DAY K-LINE (GROUNDED SIMULATION)",
-      sources: "GROUNDING SOURCES",
       support: "Support", resistance: "Resistance"
     },
     zh: {
@@ -44,123 +41,30 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       longTerm: "长线 / 价值投资",
       trend: "趋势 / 均线跟踪",
       risk: "风险预警",
-      sentiment: "多空情绪",
+      sentiment: "多空情绪指数",
       chartTitle: "180日 K线走势 (实时锚定模拟)",
-      sources: "参考来源",
       support: "支撑位", resistance: "阻力位"
     }
   }[lang];
-
-  const generateAnchoredHistory = (currentPrice: number, changePercent: number) => {
-    const history: OHLC[] = [];
-    let p = currentPrice / (1 + (changePercent || 0) / 100);
-    for (let i = 0; i < 180; i++) {
-      const vol = 0.015 + Math.random() * 0.02;
-      const change = (Math.random() - 0.51) * 2 * vol;
-      const close = p;
-      const open = close / (1 + change);
-      const high = Math.max(open, close) * (1 + Math.random() * 0.01);
-      const low = Math.min(open, close) * (1 - Math.random() * 0.01);
-      history.unshift({
-        date: new Date(Date.now() - i * 86400000).toISOString().split('T')[0],
-        open: parseFloat(open.toFixed(2)),
-        high: parseFloat(high.toFixed(2)),
-        low: parseFloat(low.toFixed(2)),
-        close: parseFloat(close.toFixed(2)),
-        volume: 1000000 + Math.random() * 5000000
-      });
-      p = open;
-    }
-    for (let i = 0; i < history.length; i++) {
-      const ma = (days: number) => {
-        if (i < days - 1) return undefined;
-        return parseFloat((history.slice(i - days + 1, i + 1).reduce((a, b) => a + b.close, 0) / days).toFixed(2));
-      };
-      history[i].ma5 = ma(5);
-      history[i].ma10 = ma(10);
-      history[i].ma20 = ma(20);
-    }
-    return history;
-  };
-
-  const extractJsonFromText = (text: string) => {
-    try {
-      // Direct parse attempt
-      return JSON.parse(text);
-    } catch (e) {
-      // Look for the first occurrence of { and the last occurrence of }
-      const startIdx = text.indexOf('{');
-      const endIdx = text.lastIndexOf('}');
-      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-        const jsonContent = text.substring(startIdx, endIdx + 1);
-        try {
-          return JSON.parse(jsonContent);
-        } catch (innerError) {
-          console.error("Failed to parse extracted JSON block:", jsonContent);
-          throw innerError;
-        }
-      }
-      throw new Error("No JSON object found in response text");
-    }
-  };
 
   const handleAnalyze = async () => {
     if (!code) return;
     setLoading(true);
     setData(null);
-    setSources([]);
 
     try {
-      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Use Google Search to find real-time financial information for the stock code "${code}". 
-      Especially if the code is 000021, the name is "深科技". 
-      Provide the following details strictly in JSON format:
-      {
-        "name": "Correct Company Name",
-        "market": "A-Share/HKEX/NASDAQ etc",
-        "currentPrice": number (current real-time price),
-        "changeAmount": number,
-        "changePercent": number,
-        "pe": number,
-        "pb": number,
-        "turnoverRate": number,
-        "amplitude": number,
-        "trend": "STRONG" | "VOLATILE" | "WEAK",
-        "support": number,
-        "resistance": number,
-        "sentiment": number (0-100),
-        "strategyAdvice": {
-          "shortTerm": "Advice for short term",
-          "longTerm": "Advice for long term",
-          "trendFollower": "Advice for trend following"
-        },
-        "risks": ["Risk 1", "Risk 2"]
-      }
-      Ensure currentPrice is up to date based on your search results.`;
-
-      const result = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json"
-        }
+      const response = await fetch('/api/analyze-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code })
       });
 
-      const responseText = result.text || "";
-      console.log("Gemini Raw Response:", responseText);
-      const parsed = extractJsonFromText(responseText);
-      
-      const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks;
-      if (groundingChunks) {
-        setSources(groundingChunks.filter(c => c.web).map(c => ({ title: c.web!.title, uri: c.web!.uri })));
-      }
-
-      const history = generateAnchoredHistory(parsed.currentPrice, parsed.changePercent);
-      setData({ ...parsed, code, history });
+      if (!response.ok) throw new Error(await response.text());
+      const result = await response.json();
+      setData(result);
     } catch (e) {
-      console.error("Stock Analysis Error Detail:", e);
-      alert(`Analysis failed: ${e instanceof Error ? e.message : 'Unknown error'}. Check console.`);
+      console.error("Analysis Error:", e);
+      alert(`Analysis failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
     } finally {
       setLoading(false);
     }
@@ -183,21 +87,17 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const minP = Math.min(...hist.map(d => d.low)) * 0.98;
     const range = maxP - minP;
     const stepX = (w - padding * 2) / (hist.length || 1);
-
     const getY = (p: number) => padding + (1 - (p - minP) / (range || 1)) * (kH - padding * 2);
 
     hist.forEach((d, i) => {
       const x = padding + i * stepX;
       const isUp = d.close >= d.open;
       const color = isUp ? '#ef4444' : '#22c55e';
-      
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.moveTo(x + stepX*0.35, getY(d.high));
       ctx.lineTo(x + stepX*0.35, getY(d.low));
       ctx.stroke();
-      
       ctx.fillStyle = color;
       const oY = getY(d.open);
       const cY = getY(d.close);
@@ -206,11 +106,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
     const drawMA = (key: 'ma5'|'ma10'|'ma20', color: string) => {
       ctx.strokeStyle = color;
-      ctx.lineWidth = 1.5;
       ctx.beginPath();
       let first = true;
       hist.forEach((d, i) => {
-        const val = d[key];
+        const val = (d as any)[key];
         if (val) {
           const x = padding + i * stepX + stepX * 0.35;
           const y = getY(val);
@@ -228,25 +127,12 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       <div className="max-w-6xl w-full mx-auto space-y-6 pb-12">
         <div className="text-center">
           <h2 className="text-4xl font-tech font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase tracking-widest">{t.title}</h2>
-          <p className="text-[10px] text-slate-500 font-code mt-2 uppercase tracking-[0.2em]">Live Grounding powered by Google Search</p>
+          <p className="text-[10px] text-slate-500 font-code mt-2 uppercase tracking-[0.2em]">Live Grounding powered by Backend AI Node</p>
         </div>
 
         <div className="flex gap-4 max-w-2xl mx-auto bg-slate-900/80 p-1.5 border border-cyan-500/30 backdrop-blur-xl clip-button">
-          <input 
-            type="text" 
-            value={code} 
-            onChange={(e) => setCode(e.target.value)} 
-            placeholder={t.inputPlaceholder} 
-            className="flex-1 bg-transparent border-none text-white font-code px-5 focus:outline-none text-lg" 
-            onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()} 
-          />
-          <button 
-            onClick={handleAnalyze} 
-            disabled={loading} 
-            className="bg-cyan-600 hover:bg-cyan-500 text-white font-tech px-10 py-3 disabled:opacity-50 font-bold transition-all"
-          >
-            {loading ? t.analyzing : t.analyze}
-          </button>
+          <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t.inputPlaceholder} className="flex-1 bg-transparent border-none text-white font-code px-5 focus:outline-none text-lg" onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()} />
+          <button onClick={handleAnalyze} disabled={loading} className="bg-cyan-600 hover:bg-cyan-500 text-white font-tech px-10 py-3 disabled:opacity-50 font-bold transition-all">{loading ? t.analyzing : t.analyze}</button>
         </div>
 
         {data && (
@@ -275,12 +161,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
               </div>
 
               <div className="bg-black/60 border border-slate-800 p-4 shadow-2xl overflow-hidden">
-                <div className="flex gap-4 text-[10px] font-code mb-4 border-b border-slate-800 pb-2">
-                   <span className="text-yellow-400">MA5</span>
-                   <span className="text-pink-400">MA10</span>
-                   <span className="text-blue-400">MA20</span>
-                   <span className="text-slate-500 ml-auto uppercase tracking-tighter">{t.chartTitle}</span>
-                </div>
                 <canvas ref={mainCanvasRef} width={900} height={400} className="w-full h-[350px]" />
               </div>
 
@@ -324,19 +204,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                      ))}
                   </ul>
                </div>
-
-               {sources.length > 0 && (
-                 <div className="bg-cyan-900/10 border border-cyan-900/30 p-6">
-                    <h4 className="text-[11px] font-tech font-bold text-cyan-500 mb-4 uppercase tracking-widest">{t.sources}</h4>
-                    <ul className="space-y-2">
-                       {sources.slice(0, 3).map((s, i) => (
-                         <li key={i} className="text-[10px] font-code truncate">
-                            <a href={s.uri} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 transition-colors">» {s.title}</a>
-                         </li>
-                       ))}
-                    </ul>
-                 </div>
-               )}
             </div>
           </div>
         )}

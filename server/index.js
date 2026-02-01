@@ -8,6 +8,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -28,6 +29,12 @@ const STATS_FILE = path.join(DATA_DIR, 'stats.json');
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
 
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
+  filename: (req, file, cb) => cb(null, uuidv4() + path.extname(file.originalname))
+});
+const upload = multer({ storage });
+
 // Stats Logic
 function getStats() {
   try {
@@ -37,32 +44,20 @@ function getStats() {
       return initial;
     }
     const content = fs.readFileSync(STATS_FILE, 'utf8').trim();
-    if (!content) return { processedCount: 0 };
-    return JSON.parse(content);
-  } catch (e) { 
-    console.error("Stats read error:", e);
-    return { processedCount: 0 }; 
-  }
+    return content ? JSON.parse(content) : { processedCount: 0 };
+  } catch (e) { return { processedCount: 0 }; }
 }
 
 function incrementStats() {
   const stats = getStats();
   stats.processedCount += 1;
-  try {
-    fs.writeFileSync(STATS_FILE, JSON.stringify(stats));
-  } catch (e) {
-    console.error("Stats write error:", e);
-  }
-  return stats.processedCount;
+  fs.writeFileSync(STATS_FILE, JSON.stringify(stats));
 }
 
-app.get('/api/stats', (req, res) => {
-  res.json(getStats());
-});
+app.get('/api/stats', (req, res) => res.json(getStats()));
 
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
   try {
     const metadata = await sharp(req.file.path).metadata();
     res.json({
@@ -77,13 +72,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       depth: metadata.depth
     });
   } catch (err) {
-    res.json({
-      id: path.basename(req.file.filename, path.extname(req.file.filename)),
-      filename: req.file.filename,
-      url: `/api/files/${req.file.filename}`,
-      originalName: req.file.originalname,
-      size: req.file.size
-    });
+    res.json({ id: uuidv4(), filename: req.file.filename, url: `/api/files/${req.file.filename}`, originalName: req.file.originalname, size: req.file.size });
   }
 });
 
@@ -92,8 +81,6 @@ app.use('/api/processed', express.static(PROCESSED_DIR));
 
 app.post('/api/process', async (req, res) => {
   const { id, options } = req.body;
-  if (!id) return res.status(400).json({ error: 'ID is required' });
-
   const files = fs.readdirSync(UPLOAD_DIR);
   const fileName = files.find(f => f.startsWith(id));
   if (!fileName) return res.status(404).json({ error: 'File not found' });
@@ -104,64 +91,77 @@ app.post('/api/process', async (req, res) => {
 
   try {
     let pipeline = sharp(inputPath);
-    
     if (options.rotate) pipeline = pipeline.rotate(options.rotate);
     if (options.flipX) pipeline = pipeline.flop();
     if (options.flipY) pipeline = pipeline.flip();
     if (options.grayscale) pipeline = pipeline.grayscale();
     if (options.blur) pipeline = pipeline.blur(options.blur);
     if (options.sharpen) pipeline = pipeline.sharpen();
+    if (options.width || options.height) pipeline = pipeline.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
 
-    if (options.width || options.height) {
-      pipeline = pipeline.resize(options.width, options.height, {
-        fit: options.resizeMode || 'cover'
-      });
-    }
-
-    if (options.format === 'jpeg' || options.format === 'original') {
-      pipeline = pipeline.jpeg({ quality: options.quality });
-    } else if (options.format === 'png') {
-      pipeline = pipeline.png();
-    } else if (options.format === 'webp') {
-      pipeline = pipeline.webp({ quality: options.quality });
-    }
+    if (options.format === 'png') pipeline = pipeline.png();
+    else if (options.format === 'webp') pipeline = pipeline.webp({ quality: options.quality });
+    else pipeline = pipeline.jpeg({ quality: options.quality });
 
     await pipeline.toFile(outputPath);
     incrementStats();
-
-    const stats = fs.statSync(outputPath);
-    res.json({
-      url: `/api/processed/${outFilename}`,
-      filename: outFilename,
-      size: stats.size
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Processing failed' });
-  }
+    res.json({ url: `/api/processed/${outFilename}`, filename: outFilename, size: fs.statSync(outputPath).size });
+  } catch (err) { res.status(500).json({ error: 'Processing failed' }); }
 });
 
-// Simulation backup for analyze-stock if direct client call fails or if requested
-app.post('/api/analyze-stock', (req, res) => {
-  let { code } = req.body;
-  if (!code) return res.status(400).json({ error: "Code required" });
-  code = code.toUpperCase().trim();
+// --- REAL-TIME STOCK ANALYSIS VIA GEMINI (BACKEND) ---
+app.post('/api/analyze-stock', async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: "Stock code required" });
 
-  const hash = crypto.createHash('md5').update(code).digest('hex');
-  const seed = parseInt(hash.substring(0, 8), 16);
-  const random = (() => {
-    let s = seed;
-    return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
-  })();
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const prompt = `Find real-time financial information for stock "${code}". 
+    Special case: 000021 is "深科技".
+    Required details (JSON ONLY): name, market, currentPrice (number), changeAmount (number), changePercent (number), pe, pb, turnoverRate, amplitude, trend (STRONG/VOLATILE/WEAK), support, resistance, sentiment (0-100), strategyAdvice (shortTerm, longTerm, trendFollower), risks (array).`;
 
-  const latestPrice = 20 + random() * 100;
-  res.json({
-    name: `DeepTech ${code}`,
-    currentPrice: latestPrice,
-    changeAmount: 0.5,
-    changePercent: 1.5,
-    market: "A-Share"
-  });
+    const result = await ai.models.generateContent({
+      model: 'gemini-3-pro-preview',
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json"
+      }
+    });
+
+    const responseText = result.text;
+    const data = JSON.parse(responseText);
+
+    // Generate simulated history anchored to real current price
+    const history = [];
+    let p = data.currentPrice / (1 + (data.changePercent || 0) / 100);
+    for (let i = 0; i < 180; i++) {
+      const change = (Math.random() - 0.5) * 0.04;
+      const close = p * (1 + change);
+      history.push({
+        date: new Date(Date.now() - (180 - i) * 86400000).toISOString().split('T')[0],
+        open: parseFloat(p.toFixed(2)),
+        high: parseFloat((Math.max(p, close) * 1.01).toFixed(2)),
+        low: parseFloat((Math.min(p, close) * 0.99).toFixed(2)),
+        close: parseFloat(close.toFixed(2)),
+        volume: Math.floor(1000000 + Math.random() * 5000000)
+      });
+      p = close;
+    }
+    
+    // Add MAs
+    for (let i = 0; i < history.length; i++) {
+        const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
+        history[i].ma5 = ma(5);
+        history[i].ma10 = ma(10);
+        history[i].ma20 = ma(20);
+    }
+
+    res.json({ ...data, history, code });
+  } catch (err) {
+    console.error("Gemini Error:", err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
