@@ -24,7 +24,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
 const stockCache = new Map();
-const CACHE_TTL = 3 * 60 * 1000; // 3 mins
+const CACHE_TTL = 5 * 60 * 1000; // 5 mins
 
 [UPLOAD_DIR, PROCESSED_DIR, DATA_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -83,45 +83,56 @@ app.post('/api/process', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Fail' }); }
 });
 
-// --- REAL-TIME FINANCIAL DATA PROXY ---
-async function fetchRealTimeQuote(code) {
-  const ticker = code.trim().toUpperCase();
-  let secid = '';
-  // Identify Market
-  if (/^[6]/.test(ticker)) secid = `1.${ticker}`; // SH
-  else if (/^[03]/.test(ticker)) secid = `0.${ticker}`; // SZ
-  else if (/^[5]/.test(ticker)) secid = `1.${ticker}`; // SH ETF
-  else if (/^[1]/.test(ticker)) secid = `0.${ticker}`; // SZ ETF
-  else return null;
+// --- ENHANCED FINANCIAL DATA FETCHER ---
 
+function getSecId(ticker) {
+  if (/^[6]/.test(ticker)) return `1.${ticker}`; // SH
+  if (/^[03]/.test(ticker)) return `0.${ticker}`; // SZ
+  if (/^[5]/.test(ticker)) return `1.${ticker}`; // SH ETF
+  if (/^[1]/.test(ticker)) return `0.${ticker}`; // SZ ETF
+  return null;
+}
+
+async function fetchRealTimeQuote(ticker) {
+  const secid = getSecId(ticker);
+  if (!secid) return null;
   try {
-    // Calling EastMoney Public Quote API
     const url = `https://push2.eastmoney.com/api/qt/stock/get?secid=${secid}&fields=f43,f44,f45,f46,f47,f48,f50,f57,f58,f60,f161,f162,f163,f164,f167,f168,f169,f170,f171,f116`;
     const response = await fetch(url);
     const json = await response.json();
     if (!json.data) return null;
-    
     const d = json.data;
     return {
-      name: d.f58,
-      price: d.f43 / 100,
-      open: d.f46 / 100,
-      high: d.f44 / 100,
-      low: d.f45 / 100,
-      vol: d.f47,
-      turnover: d.f48,
-      changePercent: d.f170 / 100,
-      pe: d.f162 / 100,
-      pb: d.f167 / 100,
-      high52: d.f171 / 100, // This is actually f171 in some EM APIs, but we fallback
-      low52: d.f168 / 100,
-      isETF: /ETF/.test(d.f58) || /基金/.test(d.f58),
-      raw: d
+      name: d.f58, price: d.f43 / 100, open: d.f46 / 100, high: d.f44 / 100, low: d.f45 / 100, 
+      vol: d.f47, turnover: d.f168 / 100, changePercent: d.f170 / 100, 
+      pe: d.f162 / 100, pb: d.f167 / 100, high52: d.f171 / 100, low52: d.f168 / 100,
+      isETF: /ETF/.test(d.f58) || /基金/.test(d.f58)
     };
-  } catch (e) {
-    console.error("EM API Error", e);
-    return null;
-  }
+  } catch (e) { return null; }
+}
+
+async function fetchHistoricalKLines(ticker, limit = 180) {
+  const secid = getSecId(ticker);
+  if (!secid) return [];
+  try {
+    // klt=101 (daily), fqt=1 (forward adjusted)
+    const url = `https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=${secid}&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f52,f53,f54,f55,f56,f57,f58,f59,f60,f61&klt=101&fqt=1&end=20500101&lmt=${limit}`;
+    const response = await fetch(url);
+    const json = await response.json();
+    if (!json.data || !json.data.klines) return [];
+    
+    return json.data.klines.map(line => {
+      const [date, open, close, high, low, vol, amount, amplitude, pctChange, changeAmt, turnover] = line.split(',');
+      return {
+        date,
+        open: parseFloat(open),
+        close: parseFloat(close),
+        high: parseFloat(high),
+        low: parseFloat(low),
+        volume: parseFloat(vol)
+      };
+    });
+  } catch (e) { return []; }
 }
 
 app.post('/api/analyze-stock', async (req, res) => {
@@ -134,30 +145,27 @@ app.post('/api/analyze-stock', async (req, res) => {
     if (Date.now() - cached.timestamp < CACHE_TTL) return res.json({ ...cached.data, isCached: true });
   }
 
-  // 1. Get Real Data First
-  const realQuote = await fetchRealTimeQuote(ticker);
-  
+  // 1. Fetch Real Data (Real-time + History)
+  const [realQuote, history] = await Promise.all([
+    fetchRealTimeQuote(ticker),
+    fetchHistoricalKLines(ticker)
+  ]);
+
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-flash-preview';
 
+  // Last 5 days for context
+  const trendContext = history.slice(-5).map(h => `${h.date}: ${h.close}`).join(', ');
   const contextData = realQuote ? 
-    `Real-time Quote for ${ticker} (${realQuote.name}): Price: ${realQuote.price}, Change: ${realQuote.changePercent}%, PE: ${realQuote.pe}, PB: ${realQuote.pb}, High52: ${realQuote.high52}, Low52: ${realQuote.low52}.` :
-    `No real-time data found for ${ticker}. Use internal knowledge.`;
+    `Real-time Quote for ${ticker} (${realQuote.name}): Price: ${realQuote.price}, Change: ${realQuote.changePercent}%, PE: ${realQuote.pe}, PB: ${realQuote.pb}. Recent Trend: [${trendContext}].` :
+    `No real-time data found for ${ticker}. Analyze based on internal knowledge.`;
 
   const prompt = `${contextData}
-  As a Quant Analyst, provide a qualitative report for "${ticker}". 
-  If it's 513090, it's the HK Securities ETF.
-  Include Sentiment (0-100), Strategy Advice (Short/Long/Trend), and Risks.
-  If you have the Real-time Price, ensure it matches in output.
+  As a Quant Analyst, provide a report for "${ticker}". 
+  Identify market sentiment (0-100), strategy advice (Short-term/Long-term/Trend), and risks.
+  If it's an ETF like 513090 (HK Securities ETF), note its premium/discount risk.
   OUTPUT JSON ONLY:
   {
-    "name": "string",
-    "market": "SH/SZ/ETF",
-    "currentPrice": number,
-    "changePercent": number,
-    "premiumRate": number,
-    "pe": number,
-    "pb": number,
     "sentiment": number,
     "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
     "risks": ["string"]
@@ -170,67 +178,54 @@ app.post('/api/analyze-stock', async (req, res) => {
       config: { responseMimeType: "application/json" }
     });
 
-    const data = JSON.parse(result.text);
+    const aiData = JSON.parse(result.text);
     
-    // Merge real data to ensure 100% accuracy even if AI hallucinated
-    if (realQuote) {
-      data.name = realQuote.name;
-      data.currentPrice = realQuote.price;
-      data.changePercent = realQuote.changePercent;
-      data.pe = realQuote.pe;
-      data.pb = realQuote.pb;
-      // Synthesize a premium rate for ETFs if possible
-      if (realQuote.isETF) data.premiumRate = data.premiumRate || (Math.random() * 0.5).toFixed(2);
+    // Construct final response object
+    const finalData = {
+      code: ticker,
+      name: realQuote?.name || aiData.name || ticker,
+      market: realQuote?.isETF ? "ETF" : (getSecId(ticker)?.startsWith('1') ? "SH" : "SZ"),
+      currentPrice: realQuote?.price || 0,
+      changePercent: realQuote?.changePercent || 0,
+      pe: realQuote?.pe || 0,
+      pb: realQuote?.pb || 0,
+      high52: realQuote?.high52 || 0,
+      low52: realQuote?.low52 || 0,
+      sentiment: aiData.sentiment,
+      strategyAdvice: aiData.strategyAdvice,
+      risks: aiData.risks,
+      dataSource: realQuote ? "Real-time + Historical API" : "AI Simulation",
+      lastUpdated: new Date().toISOString(),
+      history: history // Actual historical data from EastMoney
+    };
+
+    // Calculate Moving Averages on actual history
+    for (let i = 0; i < finalData.history.length; i++) {
+      const calcMA = (period) => {
+        if (i < period - 1) return null;
+        const sum = finalData.history.slice(i - period + 1, i + 1).reduce((acc, curr) => acc + curr.close, 0);
+        return parseFloat((sum / period).toFixed(3));
+      };
+      finalData.history[i].ma5 = calcMA(5);
+      finalData.history[i].ma10 = calcMA(10);
+      finalData.history[i].ma20 = calcMA(20);
     }
 
-    data.lastUpdated = new Date().toISOString();
-    data.dataSource = realQuote ? "Real-time API (EastMoney)" : "AI Inference";
-
-    // History Generation
-    const history = [];
-    const DAYS = 180;
-    const baseP = realQuote ? realQuote.price : data.currentPrice;
-    const hHigh = realQuote?.high52 || baseP * 1.15;
-    const hLow = realQuote?.low52 || baseP * 0.85;
-    let curr = (hHigh + hLow) / 2;
-
-    for (let i = 0; i < DAYS; i++) {
-      const drift = (baseP - curr) / (DAYS - i);
-      const move = drift + (Math.random() - 0.5) * (curr * 0.015);
-      const close = Math.max(hLow * 0.98, Math.min(hHigh * 1.02, curr + move));
-      history.push({
-        date: new Date(Date.now() - (DAYS - i) * 86400000).toISOString().split('T')[0],
-        open: parseFloat(curr.toFixed(3)),
-        high: parseFloat((Math.max(curr, close) * 1.003).toFixed(3)),
-        low: parseFloat((Math.min(curr, close) * 0.997).toFixed(3)),
-        close: parseFloat(close.toFixed(3))
-      });
-      curr = close;
-    }
-    history[history.length - 1].close = baseP;
-
-    // MAs
-    for (let i = 0; i < history.length; i++) {
-      const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(3));
-      history[i].ma5 = ma(5); history[i].ma10 = ma(10); history[i].ma20 = ma(20);
-    }
-
-    const final = { ...data, history, code: ticker };
-    stockCache.set(ticker, { data: final, timestamp: Date.now() });
-    return res.json(final);
+    stockCache.set(ticker, { data: finalData, timestamp: Date.now() });
+    return res.json(finalData);
 
   } catch (err) {
-    // Graceful fallback: return real data even if AI fails
+    // If AI fails but we have real data, return a partial success
     if (realQuote) {
-       return res.json({
-         name: realQuote.name, code: ticker, currentPrice: realQuote.price, changePercent: realQuote.changePercent,
-         pe: realQuote.pe, pb: realQuote.pb, dataSource: "Real-time API (AI Overloaded)",
-         history: [], strategyAdvice: { shortTerm: "AI Busy", longTerm: "AI Busy", trendFollower: "AI Busy" },
-         risks: ["Model currently overloaded, showing live quote only."]
-       });
+      return res.json({
+        code: ticker, name: realQuote.name, currentPrice: realQuote.price, changePercent: realQuote.changePercent,
+        pe: realQuote.pe, pb: realQuote.pb, history, dataSource: "Real-time API (AI Error Fallback)",
+        strategyAdvice: { shortTerm: "AI Analysis Overloaded", longTerm: "Please try refreshing later", trendFollower: "Showing live quote only" },
+        risks: ["Gemini API currently unavailable for qualitative analysis."]
+      });
     }
-    res.status(err.status === 429 ? 429 : 500).json({ error: "FAIL", message: err.message });
+    res.status(500).json({ error: "FAIL", message: err.message });
   }
 });
 
-app.listen(PORT, () => console.log(`Server: ${PORT}`));
+app.listen(PORT, () => console.log(`Backend Active: ${PORT}`));
