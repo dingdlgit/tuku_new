@@ -24,7 +24,7 @@ const DATA_DIR = path.join(__dirname, 'data');
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
 const stockCache = new Map();
-const CACHE_TTL = 5 * 60 * 1000; // 5 mins
+const CACHE_TTL = 5 * 60 * 1000; // 5 mins for successful results
 
 [UPLOAD_DIR, PROCESSED_DIR, DATA_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
@@ -151,9 +151,12 @@ app.post('/api/analyze-stock', async (req, res) => {
 
   const cacheKey = `${ticker}_${userLang}`;
 
+  // Use cache only if AI succeeded in the previous run
   if (!forceSearch && stockCache.has(cacheKey)) {
     const cached = stockCache.get(cacheKey);
-    if (Date.now() - cached.timestamp < CACHE_TTL) return res.json({ ...cached.data, isCached: true });
+    if (Date.now() - cached.timestamp < CACHE_TTL) {
+       return res.json({ ...cached.data, isCached: true });
+    }
   }
 
   const [realQuote, history] = await Promise.all([
@@ -161,13 +164,11 @@ app.post('/api/analyze-stock', async (req, res) => {
     fetchHistoricalKLines(ticker)
   ]);
 
-  // DERIVE 180-day High/Low from the history array for absolute accuracy
   let high180 = 0;
   let low180 = 0;
   if (history.length > 0) {
     high180 = Math.max(...history.map(h => h.high));
     low180 = Math.min(...history.map(h => h.low));
-    // Also compare with current day's real-time extreme prices
     if (realQuote) {
       high180 = Math.max(high180, realQuote.high);
       low180 = Math.min(low180, realQuote.low);
@@ -242,22 +243,25 @@ app.post('/api/analyze-stock', async (req, res) => {
       }
     }
 
+    // Success: Cache it
     stockCache.set(cacheKey, { data: finalData, timestamp: Date.now() });
     return res.json(finalData);
 
   } catch (err) {
+    // Failure: Return real data but DO NOT cache the "Busy" result long-term
+    const isRateLimit = err.message?.includes('429') || err.message?.includes('quota');
+    const errorMsg = isRateLimit 
+      ? (userLang === 'zh' ? "AI 接口限频，请 1 分钟后再试" : "AI Rate limited. Try again in 1 min.")
+      : (userLang === 'zh' ? "AI 引擎暂时无法生成策略" : "AI engine unable to generate advice");
+
     if (realQuote) {
-      const fallbackRisks = userLang === 'zh' ? ["AI 分析暂时不可用。"] : ["AI Analysis currently unavailable."];
-      const fallbackStrategy = userLang === 'zh' ? 
-        { shortTerm: "AI 繁忙", longTerm: "AI 繁忙", trendFollower: "AI 繁忙" } :
-        { shortTerm: "AI Busy", longTerm: "AI Busy", trendFollower: "AI Busy" };
-        
       return res.json({
         code: ticker, name: realQuote.name, currentPrice: realQuote.price, changePercent: realQuote.changePercent,
         pe: realQuote.pe, pb: realQuote.pb, high52: high180, low52: low180,
-        history, dataSource: "Real-time API (AI Error Fallback)",
-        strategyAdvice: fallbackStrategy,
-        risks: fallbackRisks
+        history, dataSource: "Real-time API",
+        strategyAdvice: { shortTerm: errorMsg, longTerm: errorMsg, trendFollower: errorMsg },
+        risks: [errorMsg],
+        sentiment: 50
       });
     }
     res.status(500).json({ error: "FAIL", message: err.message });
