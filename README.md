@@ -1,42 +1,29 @@
-# 图酷 (TuKu) - Online Image Processor
 
-## 📁 Project Structure
+# 图酷 (TuKu) - Online Image Processor & Market Terminal
 
-```
-/
-├── components/       # React UI Components
-├── server/           # Backend Node.js Code
-│   ├── index.js      # Server logic
-│   └── package.json
-├── App.tsx           # Main React App
-├── Dockerfile        # Frontend Build definition
-├── Dockerfile.backend # Backend Build definition
-├── docker-compose.yml # Orchestration
-├── nginx.conf        # Web Server Config
-└── ...
-```
+## 🚀 Deployment Guide
 
-## 🚀 One-Click Deployment (Server)
+1.  **Get Gemini API Key**:
+    *   Visit [Google AI Studio](https://aistudio.google.com/app/apikey).
+    *   Create a free API Key.
+    *   Copy the Key (starts with `AIza...`).
 
-1.  **Transfer Files**: Upload this entire directory to your Ubuntu server (e.g., via SCP or Git).
-2.  **Run Deploy Command**:
+2.  **Configure Environment**:
+    *   Create a `.env` file in the project root:
+    ```bash
+    API_KEY=你的真实Key
+    ```
+
+3.  **Run with Docker**:
     ```bash
     docker compose up -d --build
     ```
-3.  **Access**: Open your browser and visit `http://YOUR_SERVER_IP`.
 
-## 🔧 Local Development
-
-1.  **Backend**:
-    ```bash
-    cd server
-    npm install
-    npm start
-    ```
-2.  **Frontend** (Requires creating a full vite project if running outside Docker):
-    *   This codebase is optimized for Docker deployment. For local dev, ensure you have Vite installed.
+## 📁 Project Structure
+* `/components`: Frontend React components.
+* `/server`: Backend Node.js server with Gemini integration.
+* `docker-compose.yml`: System orchestration.
 
 ## 📝 Features
-*   **Upload**: Drag & drop up to 20MB.
-*   **Process**: Resize, Convert (WebP/PNG/JPG), Rotate, Flip, Grayscale, Blur.
-*   **Security**: Auto-cleanup of files every 30 minutes.
+* **Image Core**: Secure resizing, conversion, and watermarking.
+* **Data Core**: Real-time stock analysis powered by Gemini (requires Code: 666888).

@@ -35,12 +35,14 @@ const storage = multer.diskStorage({
 });
 const upload = multer({ storage });
 
-// Check API Key
+// Startup check - this shows in docker logs
 if (!process.env.API_KEY) {
-  console.warn("CRITICAL: API_KEY environment variable is not set. Gemini AI features will fail.");
+  console.log("------------------------------------------------------------------");
+  console.log("WARNING: API_KEY is missing! Stock analysis will NOT work.");
+  console.log("Please run: export API_KEY=your_key && docker compose up -d");
+  console.log("------------------------------------------------------------------");
 }
 
-// Stats Logic
 function getStats() {
   try {
     if (!fs.existsSync(STATS_FILE)) {
@@ -116,17 +118,34 @@ app.post('/api/process', async (req, res) => {
 
 app.post('/api/analyze-stock', async (req, res) => {
   const { code } = req.body;
-  if (!code) return res.status(400).json({ error: "Stock code required" });
-
-  if (!process.env.API_KEY) {
-    return res.status(500).json({ error: "Server missing API_KEY. Please set it in your environment." });
+  
+  if (!process.env.API_KEY || process.env.API_KEY === "undefined" || process.env.API_KEY === "") {
+    return res.status(500).json({ 
+        error: "Backend API_KEY is missing. Please set it in your .env file or export it before running docker compose." 
+    });
   }
 
   try {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const prompt = `Find real-time financial information for stock "${code}". 
-    Special case: 000021 is "深科技".
-    Required details (JSON ONLY): name, market, currentPrice (number), changeAmount (number), changePercent (number), pe, pb, turnoverRate, amplitude, trend (STRONG/VOLATILE/WEAK), support, resistance, sentiment (0-100), strategyAdvice (shortTerm, longTerm, trendFollower), risks (array).`;
+    Important: If code is 000021, name is "深科技".
+    Return result ONLY in valid JSON format: {
+      "name": "string",
+      "market": "string",
+      "currentPrice": number,
+      "changeAmount": number,
+      "changePercent": number,
+      "pe": number,
+      "pb": number,
+      "turnoverRate": number,
+      "amplitude": number,
+      "trend": "STRONG|VOLATILE|WEAK",
+      "support": number,
+      "resistance": number,
+      "sentiment": number,
+      "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
+      "risks": ["string"]
+    }`;
 
     const result = await ai.models.generateContent({
       model: 'gemini-3-pro-preview',
@@ -137,8 +156,7 @@ app.post('/api/analyze-stock', async (req, res) => {
       }
     });
 
-    const responseText = result.text;
-    const data = JSON.parse(responseText);
+    const data = JSON.parse(result.text);
 
     const history = [];
     let p = data.currentPrice / (1 + (data.changePercent || 0) / 100);
@@ -165,8 +183,8 @@ app.post('/api/analyze-stock', async (req, res) => {
 
     res.json({ ...data, history, code });
   } catch (err) {
-    console.error("Gemini Error:", err);
-    res.status(500).json({ error: err.message });
+    console.error("Gemini Backend Error:", err);
+    res.status(500).json({ error: "Gemini AI processing failed. Check if your API Key is valid and has Search tool access." });
   }
 });
 
