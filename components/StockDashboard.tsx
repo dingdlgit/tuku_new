@@ -40,10 +40,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       trend: "MA/Trend",
       risk: "RISK EXPOSURE",
       sentiment: "SENTIMENT",
-      chartTitle: "180-DAY K-LINE RECONSTRUCTION",
+      chartTitle: "HISTORICAL K-LINE TREND",
       source: "SOURCE",
-      high52: "52W HIGH",
-      low52: "52W LOW"
+      high52: "180D HIGH",
+      low52: "180D LOW"
     },
     zh: {
       title: "图酷量化分析终端",
@@ -60,10 +60,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       trend: "趋势 / 信号",
       risk: "风险预警",
       sentiment: "多空情绪",
-      chartTitle: "180日 K线拟合走势",
+      chartTitle: "历史 K 线走势图",
       source: "行情源",
-      high52: "52周最高",
-      low52: "52周最低"
+      high52: "180日最高",
+      low52: "180日最低"
     }
   }[lang];
 
@@ -76,7 +76,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       const response = await fetch('/api/analyze-stock', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code: code.trim().toUpperCase(), forceSearch: isDeepRefresh })
+        body: JSON.stringify({ code: code.trim().toUpperCase(), forceSearch: isDeepRefresh, lang })
       });
 
       const result = await response.json();
@@ -99,30 +99,35 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const w = canvas.width;
     const h = canvas.height;
     const kH = h * 0.85; 
-    const padding = 75;
+    const paddingLeft = 75;
+    const paddingRight = 40;
+    const paddingTop = 75;
+    const paddingBottom = 40;
     ctx.clearRect(0, 0, w, h);
 
     const hist = data.history;
     const maxP = Math.max(...hist.map(d => d.high || d.close)) * 1.01;
     const minP = Math.min(...hist.map(d => d.low || d.close)) * 0.99;
     const range = maxP - minP;
-    const stepX = (w - padding * 2) / hist.length;
-    const getY = (p: number) => padding + (1 - (p - minP) / (range || 1)) * (kH - padding * 2);
+    const stepX = (w - paddingLeft - paddingRight) / hist.length;
+    const getY = (p: number) => paddingTop + (1 - (p - minP) / (range || 1)) * (kH - paddingTop - 20);
 
+    // Grid and Price Labels
     ctx.strokeStyle = 'rgba(34, 211, 238, 0.05)';
     ctx.font = '10px JetBrains Mono';
     ctx.fillStyle = 'rgba(255, 255, 255, 0.2)';
     ctx.textAlign = 'right';
 
     for (let i = 0; i <= 5; i++) {
-       const gridY = padding + (i / 5) * (kH - padding * 2);
+       const gridY = paddingTop + (i / 5) * (kH - paddingTop - 20);
        const price = maxP - (i / 5) * range;
-       ctx.beginPath(); ctx.moveTo(padding, gridY); ctx.lineTo(w - padding, gridY); ctx.stroke();
-       ctx.fillText(price.toFixed(3), padding - 15, gridY + 3);
+       ctx.beginPath(); ctx.moveTo(paddingLeft, gridY); ctx.lineTo(w - paddingRight, gridY); ctx.stroke();
+       ctx.fillText(price.toFixed(3), paddingLeft - 15, gridY + 3);
     }
 
+    // Candlesticks
     hist.forEach((d, i) => {
-      const x = padding + i * stepX;
+      const x = paddingLeft + i * stepX;
       const isUp = d.close >= d.open;
       const color = isUp ? '#f43f5e' : '#10b981';
       ctx.strokeStyle = color;
@@ -132,13 +137,14 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       ctx.fillRect(x, Math.min(oY, cY), stepX * 0.7, Math.max(1, Math.abs(oY - cY)));
     });
 
+    // MAs
     const drawMA = (key: 'ma5'|'ma10'|'ma20', color: string) => {
       ctx.strokeStyle = color; ctx.lineWidth = 1.5; ctx.beginPath();
       let first = true;
       hist.forEach((d, i) => {
         const val = (d as any)[key];
         if (val) {
-          const x = padding + i * stepX + stepX * 0.35;
+          const x = paddingLeft + i * stepX + stepX * 0.35;
           const y = getY(val);
           if (first) { ctx.moveTo(x, y); first = false; } else ctx.lineTo(x, y);
         }
@@ -207,6 +213,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
               {data.history && data.history.length > 0 ? (
                 <div className="bg-slate-900/60 border border-slate-800 p-6 relative">
                   <div className="absolute top-4 left-8 text-[9px] font-code text-slate-600 uppercase tracking-widest">{t.chartTitle}</div>
+                  <div className="absolute bottom-4 left-20 right-10 flex justify-between text-[8px] font-code text-slate-600 uppercase">
+                    <span>START: {data.history[0].date}</span>
+                    <span>END: {data.history[data.history.length - 1].date}</span>
+                  </div>
                   <canvas ref={mainCanvasRef} width={1200} height={450} className="w-full h-[400px]" />
                 </div>
               ) : (
@@ -236,7 +246,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                      {[{ label: t.pe, val: data.pe }, { label: t.pb, val: data.pb }, { label: t.high52, val: data.high52 }, { label: t.low52, val: data.low52 }].map(item => (
                        <div key={item.label} className="flex justify-between items-end border-b border-slate-800/30 pb-3">
                           <span className="text-[11px] text-slate-500 font-code uppercase">{item.label}</span>
-                          <span className="text-lg font-code text-white font-bold">{item.val || '--'}</span>
+                          <span className="text-lg font-code text-white font-bold">{item.val ? item.val.toFixed(3) : '--'}</span>
                        </div>
                      ))}
                   </div>
@@ -244,7 +254,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                <div className="bg-rose-950/10 border border-rose-900/30 p-8">
                   <h4 className="text-[12px] font-tech font-bold text-rose-500 mb-6 uppercase tracking-widest flex items-center gap-2">{t.risk}</h4>
                   <ul className="space-y-4">
-                     {(data.risks || ['No risks detected by local engine.']).map((r, i) => (
+                     {(data.risks || ['No risks detected.']).map((r, i) => (
                        <li key={i} className="text-[11px] text-slate-400 font-code flex items-start gap-4">
                           <span className="mt-1.5 w-1.5 h-1.5 bg-rose-500 shrink-0"></span><span>{r}</span>
                        </li>
