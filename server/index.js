@@ -116,9 +116,11 @@ app.post('/api/analyze-stock', async (req, res) => {
     });
   }
 
+  const today = new Date().toISOString().split('T')[0];
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const prompt = `Find real-time financial information for stock "${code}". 
-  If code is 000021, name is "深科技".
+  const prompt = `Today is ${today}. Please act as a professional financial analyst. 
+  SEARCH for the LATEST REAL-TIME financial data (price, change, fundamentals) for stock "${code}". 
+  Pay special attention to accuracy for A-shares (e.g., if code is 000021, its current price in Jan 2025 should be around 30-33 CNY).
   Return result ONLY in valid JSON format: {
     "name": "string",
     "market": "string",
@@ -138,9 +140,19 @@ app.post('/api/analyze-stock', async (req, res) => {
   }`;
 
   try {
-    // Attempt 1: With Google Search (Grounded)
     let result;
     try {
+      // Using gemini-3-pro-preview for highest accuracy with search
+      result = await ai.models.generateContent({
+        model: 'gemini-3-pro-preview',
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json"
+        }
+      });
+    } catch (searchError) {
+      console.warn("Pro-Search failed, trying Flash-Search fallback...", searchError.message);
       result = await ai.models.generateContent({
         model: 'gemini-3-flash-preview',
         contents: prompt,
@@ -149,21 +161,11 @@ app.post('/api/analyze-stock', async (req, res) => {
           responseMimeType: "application/json"
         }
       });
-    } catch (searchError) {
-      console.warn("Search tool failed or restricted, falling back to basic model...", searchError.message);
-      // Attempt 2: Without Google Search (Fallback)
-      result = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt + " (Please use your internal knowledge as Search Tool is unavailable)",
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
     }
 
     const data = JSON.parse(result.text);
 
-    // Generate Chart History
+    // History Generation
     const history = [];
     let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
     for (let i = 0; i < 180; i++) {
@@ -190,10 +192,7 @@ app.post('/api/analyze-stock', async (req, res) => {
     res.json({ ...data, history, code });
   } catch (err) {
     console.error("Gemini Final Error:", err);
-    res.status(500).json({ 
-      error: "Gemini API Error: " + err.message,
-      suggestion: "If you see 'region not supported', try using a VPN on your server or checking your Google Project settings."
-    });
+    res.status(500).json({ error: "Gemini API Error: " + err.message });
   }
 });
 
