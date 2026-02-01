@@ -125,95 +125,89 @@ app.post('/api/analyze-stock', async (req, res) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-flash-preview';
 
-  // Significantly more detailed prompt focused on grounding and verification
-  const prompt = `You are an expert Quantitative Financial Analyst specializing in the Greater China and US markets.
-  Your task is to analyze the ticker: "${code}".
-
-  STRICT IDENTIFICATION RULES:
-  1. Use Google Search to find the latest real-time quote for "${code}".
-  2. If "${code}" is "513090", it is the "易方达中证香港证券投资主题ETF" (Hong Kong Securities ETF). Do NOT confuse it with "513050" (China Internet 50).
-  3. Market Reference:
-     - 6xxxxx: Shanghai (SSE)
-     - 0xxxxx/3xxxxx: Shenzhen (SZSE)
-     - 0xxxx (5 digits): Hong Kong (HKEX)
-     - US tickers: NASDAQ/NYSE
-  4. If search results show different names, favor the most recent official financial data.
-
-  OUTPUT REQUIREMENTS:
-  Return JSON ONLY in this exact structure:
-  {
-    "name": "Official Chinese/English Name",
-    "market": "SSE/SZSE/HKEX/NASDAQ/NYSE/ETF",
-    "currentPrice": (latest numerical price),
-    "changeAmount": (net change),
-    "changePercent": (percentage change, e.g. 1.23),
-    "pe": (TTM or latest PE ratio),
-    "pb": (latest PB ratio),
-    "turnoverRate": (daily turnover %),
-    "amplitude": (daily amplitude %),
-    "trend": "STRONG|VOLATILE|WEAK",
-    "sentiment": (0-100 score),
-    "strategyAdvice": {
-      "shortTerm": "Specific tactical advice",
-      "longTerm": "Valuation and fundamental view",
-      "trendFollower": "MA and breakout signals"
-    },
-    "risks": ["Specific risk 1", "Specific risk 2"]
-  }
+  const prompt = `You are a Professional Quantitative Analyst. 
+  Task: Identify and analyze Ticker "${code}".
   
-  Do not explain. Only return the JSON.`;
+  CRITICAL MAPPING HINTS:
+  - If code is "513090", it is definitively "易方达中证香港证券投资主题ETF" (E Fund HK Securities ETF).
+  - If code starts with "513", "510", "159", it is likely an ETF.
+  
+  ANALYSIS PROTOCOL:
+  1. Use Google Search to get: Real-time price, Change%, Premium/Discount Rate (for ETFs), 52-Week High/Low, Turnover, and Volume.
+  2. For 513090, specifically check the performance of the underlying 'CSI Hong Kong Securities Index'.
+  3. Determine the "Sentiment Score" based on recent news and technical indicators.
 
-  const config = { 
-    responseMimeType: "application/json",
-    // Always use search for "Refresh" (forceSearch) or for the first query to ensure grounded identification
-    tools: forceSearch ? [{ googleSearch: {} }] : [] 
-  };
+  OUTPUT JSON ONLY:
+  {
+    "name": "Official Full Name",
+    "market": "SH/SZ/HK/US/ETF",
+    "currentPrice": number,
+    "changePercent": number,
+    "premiumRate": number,
+    "pe": number,
+    "pb": number,
+    "high52": number,
+    "low52": number,
+    "turnover": number,
+    "sentiment": number,
+    "trendDescription": "Brief description of 180-day trend",
+    "strategyAdvice": {
+      "shortTerm": "Advice",
+      "longTerm": "Advice",
+      "trendFollower": "Advice"
+    },
+    "risks": ["Risk 1", "Risk 2"]
+  }`;
 
   try {
-    let result;
-    try {
-      result = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: config
-      });
-    } catch (apiErr) {
-      // Fallback if Search Tool hits quota limits
-      console.warn("Primary API attempt failed, retrying without search tool...");
-      result = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: { responseMimeType: "application/json" }
-      });
-    }
+    const result = await ai.models.generateContent({
+      model: modelName,
+      contents: prompt,
+      config: { 
+        responseMimeType: "application/json",
+        tools: [{ googleSearch: {} }]
+      }
+    });
 
     const data = extractJson(result.text);
-    data.isRealtime = !!result.candidates?.[0]?.groundingMetadata;
     data.lastUpdated = new Date().toISOString();
+    data.isRealtime = !!result.candidates?.[0]?.groundingMetadata;
 
-    // Generate K-line history anchored to the real latest price
+    // --- REFINED K-LINE GENERATION ALGORITHM ---
     const history = [];
     const DAYS = 180;
-    let p = (data.currentPrice || 1.0) / (1 + (data.changePercent || 0) / 100);
+    const high = data.high52 || data.currentPrice * 1.15;
+    const low = data.low52 || data.currentPrice * 0.85;
     
-    // We walk backwards to generate history based on trend/volatility returned by AI
-    const baseVolatility = data.trend === 'STRONG' ? 0.025 : (data.trend === 'WEAK' ? 0.04 : 0.035);
+    // We simulate from 180 days ago towards the current price
+    // We use a random walk with mean reversion to 52w average to keep it realistic
+    const avg52 = (high + low) / 2;
+    let p = avg52; // Start from the middle point 6 months ago
     
     for (let i = 0; i < DAYS; i++) {
-      const change = (Math.random() - 0.5) * baseVolatility;
-      const close = p * (1 + change);
+      // Logic: Gradually drift p towards data.currentPrice
+      const remainingDays = DAYS - i;
+      const drift = (data.currentPrice - p) / remainingDays;
+      const volatility = p * 0.015; // 1.5% daily vol
+      const change = drift + (Math.random() - 0.5) * volatility;
+      
+      const close = Math.max(low * 0.98, Math.min(high * 1.02, p + change));
+      
       history.push({
         date: new Date(Date.now() - (DAYS - i) * 86400000).toISOString().split('T')[0],
         open: parseFloat(p.toFixed(3)),
-        high: parseFloat((Math.max(p, close) * (1 + Math.random() * 0.01)).toFixed(3)),
-        low: parseFloat((Math.min(p, close) * (1 - Math.random() * 0.01)).toFixed(3)),
+        high: parseFloat((Math.max(p, close) * (1 + Math.random() * 0.005)).toFixed(3)),
+        low: parseFloat((Math.min(p, close) * (1 - Math.random() * 0.005)).toFixed(3)),
         close: parseFloat(close.toFixed(3)),
-        volume: Math.floor(1000000 + Math.random() * 9000000)
+        volume: Math.floor(1000000 + Math.random() * 5000000)
       });
       p = close;
     }
     
-    // Calculate MAs
+    // Final candle must match current price
+    history[history.length - 1].close = data.currentPrice;
+
+    // MA Calculations
     for (let i = 0; i < history.length; i++) {
         const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(3));
         history[i].ma5 = ma(5);
@@ -224,11 +218,8 @@ app.post('/api/analyze-stock', async (req, res) => {
     return res.json({ ...data, history, code });
 
   } catch (err) {
-    console.error("Critical Analysis Failure:", err);
-    res.status(500).json({ 
-      error: "ANALYSIS_FAILED", 
-      message: err.message
-    });
+    console.error("Analysis Failed:", err);
+    res.status(500).json({ error: "ANALYSIS_FAILED", message: err.message });
   }
 });
 
