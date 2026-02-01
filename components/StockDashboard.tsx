@@ -83,17 +83,24 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     return history;
   };
 
-  const extractJson = (text: string) => {
+  const extractJsonFromText = (text: string) => {
     try {
-      // First attempt: direct parse
+      // Direct parse attempt
       return JSON.parse(text);
     } catch (e) {
-      // Second attempt: find JSON block in markdown
-      const match = text.match(/\{[\s\S]*\}/);
-      if (match) {
-        return JSON.parse(match[0]);
+      // Look for the first occurrence of { and the last occurrence of }
+      const startIdx = text.indexOf('{');
+      const endIdx = text.lastIndexOf('}');
+      if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+        const jsonContent = text.substring(startIdx, endIdx + 1);
+        try {
+          return JSON.parse(jsonContent);
+        } catch (innerError) {
+          console.error("Failed to parse extracted JSON block:", jsonContent);
+          throw innerError;
+        }
       }
-      throw e;
+      throw new Error("No JSON object found in response text");
     }
   };
 
@@ -105,12 +112,33 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Find REAL-TIME stock info for "${code}". 
-      000021 is "深科技". 
-      Provide: Name, Market, Current Price, Change Amount, Change %, PE, PB, Turnover, Amplitude, Trend, Support, Resistance, Sentiment, Strategy (shortTerm, longTerm, trendFollower), Risks.
-      Return JSON ONLY. No markdown formatting if possible, just the string.`;
+      const prompt = `Use Google Search to find real-time financial information for the stock code "${code}". 
+      Especially if the code is 000021, the name is "深科技". 
+      Provide the following details strictly in JSON format:
+      {
+        "name": "Correct Company Name",
+        "market": "A-Share/HKEX/NASDAQ etc",
+        "currentPrice": number (current real-time price),
+        "changeAmount": number,
+        "changePercent": number,
+        "pe": number,
+        "pb": number,
+        "turnoverRate": number,
+        "amplitude": number,
+        "trend": "STRONG" | "VOLATILE" | "WEAK",
+        "support": number,
+        "resistance": number,
+        "sentiment": number (0-100),
+        "strategyAdvice": {
+          "shortTerm": "Advice for short term",
+          "longTerm": "Advice for long term",
+          "trendFollower": "Advice for trend following"
+        },
+        "risks": ["Risk 1", "Risk 2"]
+      }
+      Ensure currentPrice is up to date based on your search results.`;
 
-      const response = await ai.models.generateContent({
+      const result = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
         contents: prompt,
         config: {
@@ -119,10 +147,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         }
       });
 
-      const responseText = response.text || "";
-      const parsed = extractJson(responseText);
+      const responseText = result.text || "";
+      console.log("Gemini Raw Response:", responseText);
+      const parsed = extractJsonFromText(responseText);
       
-      const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+      const groundingChunks = result.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (groundingChunks) {
         setSources(groundingChunks.filter(c => c.web).map(c => ({ title: c.web!.title, uri: c.web!.uri })));
       }
@@ -130,8 +159,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       const history = generateAnchoredHistory(parsed.currentPrice, parsed.changePercent);
       setData({ ...parsed, code, history });
     } catch (e) {
-      console.error("Analysis Error:", e);
-      alert("Analysis failed. See console for details.");
+      console.error("Stock Analysis Error Detail:", e);
+      alert(`Analysis failed: ${e instanceof Error ? e.message : 'Unknown error'}. Check console.`);
     } finally {
       setLoading(false);
     }
@@ -153,9 +182,9 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const maxP = Math.max(...hist.map(d => d.high)) * 1.02;
     const minP = Math.min(...hist.map(d => d.low)) * 0.98;
     const range = maxP - minP;
-    const stepX = (w - padding * 2) / hist.length;
+    const stepX = (w - padding * 2) / (hist.length || 1);
 
-    const getY = (p: number) => padding + (1 - (p - minP) / range) * (kH - padding * 2);
+    const getY = (p: number) => padding + (1 - (p - minP) / (range || 1)) * (kH - padding * 2);
 
     hist.forEach((d, i) => {
       const x = padding + i * stepX;
@@ -199,12 +228,25 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       <div className="max-w-6xl w-full mx-auto space-y-6 pb-12">
         <div className="text-center">
           <h2 className="text-4xl font-tech font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase tracking-widest">{t.title}</h2>
-          <p className="text-[10px] text-slate-500 font-code mt-2">LIVE GROUNDING POWERED BY GOOGLE SEARCH</p>
+          <p className="text-[10px] text-slate-500 font-code mt-2 uppercase tracking-[0.2em]">Live Grounding powered by Google Search</p>
         </div>
 
         <div className="flex gap-4 max-w-2xl mx-auto bg-slate-900/80 p-1.5 border border-cyan-500/30 backdrop-blur-xl clip-button">
-          <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t.inputPlaceholder} className="flex-1 bg-transparent border-none text-white font-code px-5 focus:outline-none text-lg" onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()} />
-          <button onClick={handleAnalyze} disabled={loading} className="bg-cyan-600 hover:bg-cyan-500 text-white font-tech px-10 py-3 disabled:opacity-50 font-bold">{loading ? t.analyzing : t.analyze}</button>
+          <input 
+            type="text" 
+            value={code} 
+            onChange={(e) => setCode(e.target.value)} 
+            placeholder={t.inputPlaceholder} 
+            className="flex-1 bg-transparent border-none text-white font-code px-5 focus:outline-none text-lg" 
+            onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()} 
+          />
+          <button 
+            onClick={handleAnalyze} 
+            disabled={loading} 
+            className="bg-cyan-600 hover:bg-cyan-500 text-white font-tech px-10 py-3 disabled:opacity-50 font-bold transition-all"
+          >
+            {loading ? t.analyzing : t.analyze}
+          </button>
         </div>
 
         {data && (
@@ -232,7 +274,13 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                 </div>
               </div>
 
-              <div className="bg-black/60 border border-slate-800 p-4 shadow-2xl">
+              <div className="bg-black/60 border border-slate-800 p-4 shadow-2xl overflow-hidden">
+                <div className="flex gap-4 text-[10px] font-code mb-4 border-b border-slate-800 pb-2">
+                   <span className="text-yellow-400">MA5</span>
+                   <span className="text-pink-400">MA10</span>
+                   <span className="text-blue-400">MA20</span>
+                   <span className="text-slate-500 ml-auto uppercase tracking-tighter">{t.chartTitle}</span>
+                </div>
                 <canvas ref={mainCanvasRef} width={900} height={400} className="w-full h-[350px]" />
               </div>
 
@@ -243,7 +291,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                    { title: t.trend, color: 'blue', text: data.strategyAdvice.trendFollower }
                  ].map(s => (
                    <div key={s.title} className="bg-slate-900/80 p-5 border border-slate-800 clip-button">
-                      <h5 className={`text-${s.color}-400 text-xs font-tech mb-3 uppercase`}>{s.title}</h5>
+                      <h5 className={`text-${s.color}-400 text-xs font-tech mb-3 uppercase tracking-tighter`}>{s.title}</h5>
                       <p className="text-[12px] text-slate-300 leading-relaxed font-code">{s.text}</p>
                    </div>
                  ))}
@@ -252,14 +300,14 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
             <div className="space-y-6">
                <div className="bg-slate-900/80 border border-slate-800 p-6">
-                  <h4 className="text-[11px] font-tech font-bold text-slate-500 mb-6 uppercase border-b border-slate-800 pb-2">{t.metrics}</h4>
+                  <h4 className="text-[11px] font-tech font-bold text-slate-500 mb-6 uppercase border-b border-slate-800 pb-2 tracking-widest">{t.metrics}</h4>
                   <div className="space-y-5">
                      {[
                        { label: t.pe, val: data.pe }, { label: t.pb, val: data.pb },
                        { label: t.turnover, val: data.turnoverRate + '%' }, { label: t.amp, val: data.amplitude + '%' }
                      ].map(item => (
                        <div key={item.label} className="flex justify-between items-end border-b border-slate-800/50 pb-1">
-                          <span className="text-[11px] text-slate-400 font-code">{item.label}</span>
+                          <span className="text-[11px] text-slate-400 font-code uppercase tracking-tighter">{item.label}</span>
                           <span className="text-lg font-code text-white font-bold">{item.val}</span>
                        </div>
                      ))}
@@ -267,7 +315,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                </div>
 
                <div className="bg-red-900/10 border border-red-900/30 p-6">
-                  <h4 className="text-[11px] font-tech font-bold text-red-500 mb-4 uppercase">{t.risk}</h4>
+                  <h4 className="text-[11px] font-tech font-bold text-red-500 mb-4 uppercase tracking-widest">{t.risk}</h4>
                   <ul className="space-y-3">
                      {data.risks.map((r, i) => (
                        <li key={i} className="text-[12px] text-red-200/70 font-code flex items-start gap-3">
@@ -279,11 +327,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
                {sources.length > 0 && (
                  <div className="bg-cyan-900/10 border border-cyan-900/30 p-6">
-                    <h4 className="text-[11px] font-tech font-bold text-cyan-500 mb-4 uppercase">{t.sources}</h4>
+                    <h4 className="text-[11px] font-tech font-bold text-cyan-500 mb-4 uppercase tracking-widest">{t.sources}</h4>
                     <ul className="space-y-2">
                        {sources.slice(0, 3).map((s, i) => (
                          <li key={i} className="text-[10px] font-code truncate">
-                            <a href={s.uri} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">» {s.title}</a>
+                            <a href={s.uri} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 transition-colors">» {s.title}</a>
                          </li>
                        ))}
                     </ul>
