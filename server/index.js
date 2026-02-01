@@ -120,13 +120,12 @@ function extractJson(text) {
 }
 
 app.post('/api/analyze-stock', async (req, res) => {
-  const { code } = req.body;
+  const { code, forceSearch } = req.body;
   if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-flash-preview';
 
-  // 增强版提示词：加入代码前缀逻辑和防误判声明
   const prompt = `You are a Senior Financial Data Analyst. 
   Target Ticker: "${code}"
   
@@ -155,17 +154,36 @@ app.post('/api/analyze-stock', async (req, res) => {
     "risks": ["string"]
   }`;
 
+  const config = { responseMimeType: "application/json" };
+  // If forceSearch is true, enable Google Search tool
+  if (forceSearch) {
+    config.tools = [{ googleSearch: {} }];
+  }
+
   try {
-    const result = await ai.models.generateContent({
-      model: modelName,
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json"
+    let result;
+    try {
+      result = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: config
+      });
+    } catch (apiErr) {
+      // If forced search failed due to quota, fallback to internal knowledge
+      if (forceSearch) {
+        console.warn("Forced Search failed, falling back to internal knowledge.");
+        result = await ai.models.generateContent({
+          model: modelName,
+          contents: prompt,
+          config: { responseMimeType: "application/json" }
+        });
+      } else {
+        throw apiErr;
       }
-    });
+    }
 
     const data = extractJson(result.text);
-    data.isRealtime = false;
+    data.isRealtime = !!result.candidates?.[0]?.groundingMetadata;
 
     const history = [];
     let p = (data.currentPrice || 1.0) / (1 + (data.changePercent || 0) / 100);
