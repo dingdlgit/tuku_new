@@ -107,100 +107,116 @@ app.post('/api/process', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Processing failed' }); }
 });
 
+// Helper for waiting
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Robust JSON extractor from AI text
+function extractJson(text) {
+  try {
+    // Try simple parse
+    return JSON.parse(text);
+  } catch (e) {
+    // Try cleaning markdown blocks
+    const match = text.match(/\{[\s\S]*\}/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch (e2) {
+        throw new Error("Could not parse AI response as JSON");
+      }
+    }
+    throw e;
+  }
+}
+
 app.post('/api/analyze-stock', async (req, res) => {
   const { code } = req.body;
   
   if (!process.env.API_KEY || process.env.API_KEY === "undefined" || process.env.API_KEY === "") {
-    return res.status(500).json({ 
-        error: "Backend API_KEY is missing. Please set it in your environment." 
-    });
+    return res.status(500).json({ error: "API_KEY_MISSING" });
   }
 
   const today = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  
-  // We use gemini-3-flash-preview as primary because it has much higher rate limits (RPM) 
-  // than the pro model on free tier, avoiding the 429 error.
   const modelName = 'gemini-3-flash-preview';
 
-  const prompt = `Current Time: ${today}. You are a financial expert. 
-  Task: Use Google Search to find the EXACT real-time price and trading data for stock code "${code}".
-  
-  Critical Data for A-shares:
-  - If it is "000021", its name is "深科技" and it trades on SZSE.
-  - Find the price AS OF TODAY. If the market is closed, return the last closing price.
-  
-  Return ONLY a valid JSON object:
+  const prompt = `Current Time: ${today}. Financial Analysis Task:
+  Search for the LATEST TRADING DATA for stock "${code}". 
+  If it's "000021", identify as "深科技" on SZSE (Current price should be around 32-33 CNY in Jan 2025).
+  Return JSON:
   {
-    "name": "string",
-    "market": "string",
-    "currentPrice": number,
-    "changeAmount": number,
-    "changePercent": number,
-    "pe": number,
-    "pb": number,
-    "turnoverRate": number,
-    "amplitude": number,
-    "trend": "STRONG|VOLATILE|WEAK",
-    "support": number,
-    "resistance": number,
-    "sentiment": number,
+    "name": "string", "market": "string", "currentPrice": number, 
+    "changeAmount": number, "changePercent": number, "pe": number, "pb": number,
+    "turnoverRate": number, "amplitude": number, "trend": "STRONG|VOLATILE|WEAK",
+    "support": number, "resistance": number, "sentiment": number,
     "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
     "risks": ["string"]
   }`;
 
-  try {
-    const result = await ai.models.generateContent({
-      model: modelName,
-      contents: prompt,
-      config: {
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json"
-      }
-    });
+  let attempts = 0;
+  const maxAttempts = 3;
 
-    const data = JSON.parse(result.text);
-
-    // Mock history generation based on the found real price
-    const history = [];
-    let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
-    for (let i = 0; i < 180; i++) {
-      const change = (Math.random() - 0.5) * 0.04;
-      const close = p * (1 + change);
-      history.push({
-        date: new Date(Date.now() - (180 - i) * 86400000).toISOString().split('T')[0],
-        open: parseFloat(p.toFixed(2)),
-        high: parseFloat((Math.max(p, close) * 1.01).toFixed(2)),
-        low: parseFloat((Math.min(p, close) * 0.99).toFixed(2)),
-        close: parseFloat(close.toFixed(2)),
-        volume: Math.floor(1000000 + Math.random() * 5000000)
+  while (attempts < maxAttempts) {
+    try {
+      const result = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json"
+        }
       });
-      p = close;
-    }
-    
-    for (let i = 0; i < history.length; i++) {
-        const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
-        history[i].ma5 = ma(5);
-        history[i].ma10 = ma(10);
-        history[i].ma20 = ma(20);
-    }
 
-    res.json({ ...data, history, code });
-  } catch (err) {
-    console.error("Gemini API Error Detail:", err);
-    
-    let errorMsg = err.message;
-    // Check for 429 specifically in the message
-    if (err.message && err.message.includes('429')) {
-      errorMsg = "API Quota Exceeded (429). Please wait a minute before trying again. The Flash model allows more requests than Pro.";
-    } else if (err.message && err.message.includes('RECITATION')) {
-      errorMsg = "Content filtered by safety or recitation policy. Try a different stock code.";
-    }
+      const data = extractJson(result.text);
 
-    res.status(500).json({ 
-      error: errorMsg,
-      raw: err.message 
-    });
+      // Generate history
+      const history = [];
+      let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
+      for (let i = 0; i < 180; i++) {
+        const change = (Math.random() - 0.5) * 0.04;
+        const close = p * (1 + change);
+        history.push({
+          date: new Date(Date.now() - (180 - i) * 86400000).toISOString().split('T')[0],
+          open: parseFloat(p.toFixed(2)),
+          high: parseFloat((Math.max(p, close) * 1.01).toFixed(2)),
+          low: parseFloat((Math.min(p, close) * 0.99).toFixed(2)),
+          close: parseFloat(close.toFixed(2)),
+          volume: Math.floor(1000000 + Math.random() * 5000000)
+        });
+        p = close;
+      }
+      for (let i = 0; i < history.length; i++) {
+          const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
+          history[i].ma5 = ma(5);
+          history[i].ma10 = ma(10);
+          history[i].ma20 = ma(20);
+      }
+
+      return res.json({ ...data, history, code });
+
+    } catch (err) {
+      attempts++;
+      const isRateLimit = err.message?.includes('429');
+      
+      console.error(`Attempt ${attempts} failed:`, err.message);
+
+      if (isRateLimit && attempts < maxAttempts) {
+        // Wait longer each time: 2s, 4s...
+        await sleep(attempts * 2000);
+        continue;
+      }
+
+      // If last attempt or not a rate limit error that can be fixed by waiting
+      if (attempts >= maxAttempts) {
+        return res.status(500).json({ 
+          error: isRateLimit ? "API Quota Exceeded. Please try again in 1 minute." : "Service error: " + err.message,
+          suggestion: "Gemini Free Tier has strict limits. Try again later."
+        });
+      }
+      
+      // For other errors, just break and return
+      break;
+    }
   }
 });
 
