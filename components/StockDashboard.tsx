@@ -4,6 +4,7 @@ import { StockAnalysisResult, Language, OHLC } from '../types';
 
 interface ExtendedStockResult extends StockAnalysisResult {
   isRealtime?: boolean;
+  lastUpdated?: string;
 }
 
 interface StockDashboardProps {
@@ -35,10 +36,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       sentiment: "SENTIMENT",
       chartTitle: "180-DAY K-LINE (GROUNDED SIMULATION)",
       support: "Support", resistance: "Resistance",
-      realtimeStatus: "LIVE_SEARCH",
-      fallbackStatus: "INTERNAL_KNOWLEDGE",
+      realtimeStatus: "GROUNDED SEARCH ACTIVE",
+      fallbackStatus: "INTERNAL DATABASE MODE",
       startTime: "T-START",
-      endTime: "T-NOW"
+      endTime: "T-NOW",
+      lastUpdate: "SYNCED"
     },
     zh: {
       title: "量子金融交易终端",
@@ -57,10 +59,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       sentiment: "多空情绪指数",
       chartTitle: "180日 K线走势 (实时锚定模拟)",
       support: "支撑位", resistance: "阻力位",
-      realtimeStatus: "实时联网数据",
-      fallbackStatus: "离线分析模式 (由于配额限制)",
+      realtimeStatus: "联网实时查询",
+      fallbackStatus: "由于频率限制进入离线模式",
       startTime: "起始时间",
-      endTime: "结束时间"
+      endTime: "结束时间",
+      lastUpdate: "最后更新"
     }
   }[lang];
 
@@ -98,8 +101,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
     const w = canvas.width;
     const h = canvas.height;
-    const kH = h * 0.85; // Extra space for dates
-    const padding = 50;
+    const kH = h * 0.85; 
+    const padding = 60;
     ctx.clearRect(0, 0, w, h);
 
     const hist = data.history;
@@ -109,32 +112,45 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const stepX = (w - padding * 2) / (hist.length || 1);
     const getY = (p: number) => padding + (1 - (p - minP) / (range || 1)) * (kH - padding * 2);
 
-    // Draw Gridlines
+    // Draw Gridlines with Price Labels
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
     ctx.lineWidth = 1;
-    for (let i = 0; i < 5; i++) {
-       const gridY = padding + (i / 4) * (kH - padding * 2);
+    ctx.font = '10px JetBrains Mono, monospace';
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.textAlign = 'right';
+
+    for (let i = 0; i < 6; i++) {
+       const gridY = padding + (i / 5) * (kH - padding * 2);
+       const price = maxP - (i / 5) * range;
        ctx.beginPath();
        ctx.moveTo(padding, gridY);
        ctx.lineTo(w - padding, gridY);
        ctx.stroke();
+       ctx.fillText(price.toFixed(3), padding - 10, gridY + 3);
     }
 
+    // Draw Candles
     hist.forEach((d, i) => {
       const x = padding + i * stepX;
       const isUp = d.close >= d.open;
       const color = isUp ? '#ef4444' : '#22c55e';
       ctx.strokeStyle = color;
+      ctx.lineWidth = 1;
+      
+      // Shadow
       ctx.beginPath();
       ctx.moveTo(x + stepX*0.35, getY(d.high));
       ctx.lineTo(x + stepX*0.35, getY(d.low));
       ctx.stroke();
+      
+      // Body
       ctx.fillStyle = color;
       const oY = getY(d.open);
       const cY = getY(d.close);
       ctx.fillRect(x, Math.min(oY, cY), stepX * 0.7, Math.max(1, Math.abs(oY - cY)));
     });
 
+    // Draw Moving Averages
     const drawMA = (key: 'ma5'|'ma10'|'ma20', color: string) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
@@ -153,25 +169,25 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     };
     drawMA('ma5', '#fef08a'); drawMA('ma10', '#f472b6'); drawMA('ma20', '#60a5fa');
 
-    // Draw Date Labels
+    // Draw X-Axis Date Labels
     if (hist.length > 0) {
        ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
        ctx.font = '10px JetBrains Mono, monospace';
        
        // Start Date
        ctx.textAlign = 'left';
-       ctx.fillText(`${t.startTime}: ${hist[0].date}`, padding, kH + 20);
+       ctx.fillText(`${t.startTime}: ${hist[0].date}`, padding, kH + 25);
        
+       // Mid Date (estimated)
+       const mid = Math.floor(hist.length / 2);
+       ctx.textAlign = 'center';
+       ctx.fillText(hist[mid].date, padding + mid * stepX, kH + 25);
+
        // End Date
        ctx.textAlign = 'right';
-       ctx.fillText(`${t.endTime}: ${hist[hist.length-1].date}`, w - padding, kH + 20);
-       
-       // Price Labels
-       ctx.textAlign = 'right';
-       ctx.fillText(maxP.toFixed(2), padding - 5, padding + 10);
-       ctx.fillText(minP.toFixed(2), padding - 5, kH - 10);
+       ctx.fillText(`${t.endTime}: ${hist[hist.length-1].date}`, w - padding, kH + 25);
     }
-  }, [data, lang, t.startTime, t.endTime]);
+  }, [data, lang]);
 
   return (
     <div className="h-full flex flex-col p-6 relative custom-scrollbar overflow-y-auto">
@@ -209,7 +225,12 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                 <div className={`absolute top-0 left-0 w-2 h-full ${data.isRealtime ? 'bg-cyan-500' : 'bg-amber-500'}`}></div>
                 
                 {/* Status & Sync Button */}
-                <div className="absolute top-2 right-4 flex items-center gap-3">
+                <div className="absolute top-2 right-4 flex items-center gap-4">
+                    {data.lastUpdated && (
+                      <span className="text-[9px] font-code text-slate-500 uppercase">
+                        {t.lastUpdate}: {new Date(data.lastUpdated).toLocaleTimeString()}
+                      </span>
+                    )}
                     <button 
                       onClick={() => handleAnalyze(true)}
                       disabled={refreshing}
@@ -230,14 +251,14 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
                 <div>
                   <div className="flex items-center gap-3">
-                    <span className="text-white font-tech text-xl font-bold">{data.name}</span>
+                    <span className="text-white font-tech text-2xl font-bold">{data.name}</span>
                     <span className="text-cyan-400 bg-cyan-500/10 px-2 py-0.5 text-[10px] font-code border border-cyan-500/30">{data.market}</span>
                   </div>
                   <div className="text-[10px] text-slate-500 font-code tracking-[0.3em]">{data.code}</div>
                   <div className="flex items-baseline gap-4 mt-4">
-                    <span className="text-6xl font-code font-bold text-white tabular-nums">{(data.currentPrice || 0).toFixed(2)}</span>
+                    <span className="text-6xl font-code font-bold text-white tabular-nums">{(data.currentPrice || 0).toFixed(3)}</span>
                     <div className={`font-code font-bold ${(data.changePercent || 0) >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-                      <span className="text-2xl">{(data.changePercent || 0) >= 0 ? '▲' : '▼'} {Math.abs(data.changeAmount || 0)}</span>
+                      <span className="text-2xl">{(data.changePercent || 0) >= 0 ? '▲' : '▼'} {Math.abs(data.changeAmount || 0).toFixed(3)}</span>
                       <span className="text-lg ml-2">({data.changePercent || 0}%)</span>
                     </div>
                   </div>
@@ -250,7 +271,12 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
               <div className="bg-black/60 border border-slate-800 p-4 shadow-2xl overflow-hidden relative">
                 <div className="absolute top-4 left-6 text-[10px] font-code text-slate-600 uppercase z-10">{t.chartTitle}</div>
-                <canvas ref={mainCanvasRef} width={900} height={400} className="w-full h-[350px]" />
+                <canvas ref={mainCanvasRef} width={1000} height={450} className="w-full h-[400px]" />
+                <div className="absolute bottom-4 left-6 flex gap-4">
+                   <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-[#fef08a]"></div><span className="text-[9px] font-code text-slate-500">MA5</span></div>
+                   <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-[#f472b6]"></div><span className="text-[9px] font-code text-slate-500">MA10</span></div>
+                   <div className="flex items-center gap-1.5"><div className="w-3 h-0.5 bg-[#60a5fa]"></div><span className="text-[9px] font-code text-slate-500">MA20</span></div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
