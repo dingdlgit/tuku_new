@@ -24,9 +24,9 @@ const PROCESSED_DIR = path.join(__dirname, 'processed');
 const DATA_DIR = path.join(__dirname, 'data');
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR);
-if (!fs.existsSync(PROCESSED_DIR)) fs.mkdirSync(PROCESSED_DIR);
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR);
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!fs.existsSync(PROCESSED_DIR)) fs.mkdirSync(PROCESSED_DIR, { recursive: true });
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOAD_DIR),
@@ -54,7 +54,96 @@ function incrementStats() {
   return stats.processedCount;
 }
 
-// --- STOCK ANALYSIS API (COMPLEX SIMULATION) ---
+app.get('/api/stats', (req, res) => {
+  res.json(getStats());
+});
+
+app.post('/api/upload', upload.single('image'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  try {
+    const metadata = await sharp(req.file.path).metadata();
+    res.json({
+      id: path.basename(req.file.filename, path.extname(req.file.filename)),
+      filename: req.file.filename,
+      url: `/api/files/${req.file.filename}`,
+      originalName: req.file.originalname,
+      size: req.file.size,
+      width: metadata.width,
+      height: metadata.height,
+      format: metadata.format,
+      depth: metadata.depth
+    });
+  } catch (err) {
+    // If sharp fails (e.g. RAW file), just return basic info
+    res.json({
+      id: path.basename(req.file.filename, path.extname(req.file.filename)),
+      filename: req.file.filename,
+      url: `/api/files/${req.file.filename}`,
+      originalName: req.file.originalname,
+      size: req.file.size
+    });
+  }
+});
+
+app.use('/api/files', express.static(UPLOAD_DIR));
+app.use('/api/processed', express.static(PROCESSED_DIR));
+
+app.post('/api/process', async (req, res) => {
+  const { id, options } = req.body;
+  if (!id) return res.status(400).json({ error: 'ID is required' });
+
+  const files = fs.readdirSync(UPLOAD_DIR);
+  const fileName = files.find(f => f.startsWith(id));
+  if (!fileName) return res.status(404).json({ error: 'File not found' });
+
+  const inputPath = path.join(UPLOAD_DIR, fileName);
+  const outFilename = `processed_${uuidv4()}.${options.format === 'original' ? 'jpg' : options.format}`;
+  const outputPath = path.join(PROCESSED_DIR, outFilename);
+
+  try {
+    let pipeline = sharp(inputPath);
+
+    // If it's a RAW file, sharp might need help or we use custom logic
+    // (Simplification: assume standard formats for now)
+    
+    if (options.rotate) pipeline = pipeline.rotate(options.rotate);
+    if (options.flipX) pipeline = pipeline.flop();
+    if (options.flipY) pipeline = pipeline.flip();
+    if (options.grayscale) pipeline = pipeline.grayscale();
+    if (options.blur) pipeline = pipeline.blur(options.blur);
+    if (options.sharpen) pipeline = pipeline.sharpen();
+
+    if (options.width || options.height) {
+      pipeline = pipeline.resize(options.width, options.height, {
+        fit: options.resizeMode || 'cover'
+      });
+    }
+
+    if (options.format === 'jpeg' || options.format === 'original') {
+      pipeline = pipeline.jpeg({ quality: options.quality });
+    } else if (options.format === 'png') {
+      pipeline = pipeline.png();
+    } else if (options.format === 'webp') {
+      pipeline = pipeline.webp({ quality: options.quality });
+    }
+
+    await pipeline.toFile(outputPath);
+    incrementStats();
+
+    const stats = fs.statSync(outputPath);
+    res.json({
+      url: `/api/processed/${outFilename}`,
+      filename: outFilename,
+      size: stats.size
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Processing failed' });
+  }
+});
+
+// --- STOCK ANALYSIS API ---
 app.post('/api/analyze-stock', (req, res) => {
   let { code } = req.body;
   if (!code) return res.status(400).json({ error: "Code required" });
@@ -68,43 +157,30 @@ app.post('/api/analyze-stock', (req, res) => {
     return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
   })();
 
-  // Market Configuration
-  let market = "A-Share Main";
-  let vol = 0.02;
-  let price = 20 + random() * 100;
-  if (/^688/.test(code)) { market = "STAR Market"; vol = 0.04; }
-  else if (/^300/.test(code)) { market = "ChiNext"; vol = 0.035; }
-  else if (/^\d{5}$/.test(code)) { market = "HKEX"; vol = 0.03; price = 5 + random() * 50; }
-  else if (/^[A-Z]/.test(code)) { market = "NASDAQ/NYSE"; vol = 0.025; price = 100 + random() * 500; }
-
-  // Generate 180 days of OHLC
   const history = [];
-  let currentPrice = price;
+  let currentPrice = 20 + random() * 100;
   for (let i = 0; i < 180; i++) {
-    const dayChange = (random() - 0.48) * 2 * vol; // Slight upward bias
+    const dayChange = (random() - 0.48) * 2 * 0.02;
     const open = currentPrice;
     const close = open * (1 + dayChange);
-    const high = Math.max(open, close) * (1 + random() * 0.015);
-    const low = Math.min(open, close) * (1 - random() * 0.015);
-    const volume = 1000000 + random() * 9000000;
-    
+    const high = Math.max(open, close) * (1 + random() * 0.01);
+    const low = Math.min(open, close) * (1 - random() * 0.01);
     history.push({
       date: new Date(Date.now() - (180 - i) * 86400000).toISOString().split('T')[0],
       open: parseFloat(open.toFixed(2)),
       high: parseFloat(high.toFixed(2)),
       low: parseFloat(low.toFixed(2)),
       close: parseFloat(close.toFixed(2)),
-      volume: Math.floor(volume)
+      volume: Math.floor(1000000 + random() * 9000000)
     });
     currentPrice = close;
   }
 
-  // Calculate Moving Averages
+  // Calculate MAs
   for (let i = 0; i < history.length; i++) {
-    const calcMA = (period) => {
-      if (i < period - 1) return null;
-      const sum = history.slice(i - period + 1, i + 1).reduce((a, b) => a + b.close, 0);
-      return parseFloat((sum / period).toFixed(2));
+    const calcMA = (p) => {
+      if (i < p - 1) return null;
+      return parseFloat((history.slice(i - p + 1, i + 1).reduce((a, b) => a + b.close, 0) / p).toFixed(2));
     };
     history[i].ma5 = calcMA(5);
     history[i].ma10 = calcMA(10);
@@ -113,43 +189,30 @@ app.post('/api/analyze-stock', (req, res) => {
 
   const latest = history[history.length - 1];
   const prev = history[history.length - 2];
-  const changeAmt = latest.close - prev.close;
-  const changePct = (changeAmt / prev.close) * 100;
-
-  // Analysis Logic
-  const pe = 10 + random() * 50;
-  const pb = 1 + random() * 10;
-  const turnover = 1 + random() * 15;
-  const sentiment = 30 + random() * 60;
-  
-  const trend = changePct > 1 ? 'STRONG' : (changePct < -1 ? 'WEAK' : 'VOLATILE');
 
   res.json({
     code,
-    market,
-    name: `Quantum ${code.substring(0, 3)} Node`,
+    market: "A-Share",
+    name: `DeepTech ${code}`,
     currentPrice: latest.close,
-    changeAmount: parseFloat(changeAmt.toFixed(2)),
-    changePercent: parseFloat(changePct.toFixed(2)),
-    pe: parseFloat(pe.toFixed(2)),
-    pb: parseFloat(pb.toFixed(2)),
-    turnoverRate: parseFloat(turnover.toFixed(2)),
-    amplitude: parseFloat((((latest.high - latest.low) / prev.close) * 100).toFixed(2)),
-    trend,
-    support: parseFloat((latest.close * 0.92).toFixed(2)),
-    resistance: parseFloat((latest.close * 1.08).toFixed(2)),
-    sentiment: Math.floor(sentiment),
-    techAnalysis: `Currently ${trend === 'STRONG' ? 'trading above 20-day MA' : 'testing support levels'}. RSI at ${Math.floor(40 + random() * 30)} shows neutral momentum.`,
+    changeAmount: parseFloat((latest.close - prev.close).toFixed(2)),
+    changePercent: parseFloat(((latest.close - prev.close) / prev.close * 100).toFixed(2)),
+    pe: parseFloat((10 + random() * 40).toFixed(2)),
+    pb: parseFloat((1 + random() * 5).toFixed(2)),
+    turnoverRate: parseFloat((1 + random() * 10).toFixed(2)),
+    amplitude: parseFloat(((latest.high - latest.low) / prev.close * 100).toFixed(2)),
+    trend: 'VOLATILE',
+    support: parseFloat((latest.close * 0.95).toFixed(2)),
+    resistance: parseFloat((latest.close * 1.05).toFixed(2)),
+    sentiment: Math.floor(30 + random() * 60),
     strategyAdvice: {
-      shortTerm: "High volatility detected. Suitable for limit-up (打板) players on volume breakouts.",
-      longTerm: pe < 20 ? "Under-valued relative to peers. Gradual accumulation recommended." : "Premium valuation. Wait for correction.",
-      trendFollower: latest.close > (latest.ma20 || 0) ? "Bullish crossover (Golden Cross). Hold position." : "Bearish trend. Tighten stop-loss."
+      shortTerm: "Neutral momentum.",
+      longTerm: "Hold.",
+      trendFollower: "Wait for signal."
     },
-    risks: ["Market systemic risk", "Liquidity shrinkage", "Sector rotation headwinds"],
+    risks: ["Systemic volatility"],
     history
   });
 });
 
-// Reuse conversion and processing from before
-// (Omitted standard sharp/bmp logic here to save space, but it remains in full version)
-app.listen(PORT, () => console.log(`Server port ${PORT}`));
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

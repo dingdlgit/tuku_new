@@ -51,10 +51,9 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     }
   }[lang];
 
-  // Helper to generate history anchored to the fetched real price
   const generateAnchoredHistory = (currentPrice: number, changePercent: number) => {
     const history: OHLC[] = [];
-    let p = currentPrice / (1 + changePercent / 100);
+    let p = currentPrice / (1 + (changePercent || 0) / 100);
     for (let i = 0; i < 180; i++) {
       const vol = 0.015 + Math.random() * 0.02;
       const change = (Math.random() - 0.51) * 2 * vol;
@@ -84,6 +83,20 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     return history;
   };
 
+  const extractJson = (text: string) => {
+    try {
+      // First attempt: direct parse
+      return JSON.parse(text);
+    } catch (e) {
+      // Second attempt: find JSON block in markdown
+      const match = text.match(/\{[\s\S]*\}/);
+      if (match) {
+        return JSON.parse(match[0]);
+      }
+      throw e;
+    }
+  };
+
   const handleAnalyze = async () => {
     if (!code) return;
     setLoading(true);
@@ -92,30 +105,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-      const prompt = `Use Google Search to find the REAL-TIME information for stock "${code}".
-      1. Correct Name (e.g. 000021 is "深科技" / "DeepTech").
-      2. REAL-TIME Price, Change Amount, and Change Percentage.
-      3. PE, PB, Turnover, and Amplitude.
-      4. Strategy advice for different roles.
-      5. Risks.
-      Return JSON ONLY:
-      {
-        "name": string,
-        "market": string,
-        "currentPrice": number,
-        "changeAmount": number,
-        "changePercent": number,
-        "pe": number,
-        "pb": number,
-        "turnoverRate": number,
-        "amplitude": number,
-        "trend": "STRONG" | "VOLATILE" | "WEAK",
-        "support": number,
-        "resistance": number,
-        "sentiment": number,
-        "strategyAdvice": { "shortTerm": string, "longTerm": string, "trendFollower": string },
-        "risks": string[]
-      }`;
+      const prompt = `Find REAL-TIME stock info for "${code}". 
+      000021 is "深科技". 
+      Provide: Name, Market, Current Price, Change Amount, Change %, PE, PB, Turnover, Amplitude, Trend, Support, Resistance, Sentiment, Strategy (shortTerm, longTerm, trendFollower), Risks.
+      Return JSON ONLY. No markdown formatting if possible, just the string.`;
 
       const response = await ai.models.generateContent({
         model: 'gemini-3-pro-preview',
@@ -126,7 +119,9 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         }
       });
 
-      const parsed = JSON.parse(response.text || "{}");
+      const responseText = response.text || "";
+      const parsed = extractJson(responseText);
+      
       const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
       if (groundingChunks) {
         setSources(groundingChunks.filter(c => c.web).map(c => ({ title: c.web!.title, uri: c.web!.uri })));
@@ -135,8 +130,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       const history = generateAnchoredHistory(parsed.currentPrice, parsed.changePercent);
       setData({ ...parsed, code, history });
     } catch (e) {
-      console.error(e);
-      alert("Analysis failed. Check console for details.");
+      console.error("Analysis Error:", e);
+      alert("Analysis failed. See console for details.");
     } finally {
       setLoading(false);
     }
@@ -162,11 +157,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
     const getY = (p: number) => padding + (1 - (p - minP) / range) * (kH - padding * 2);
 
-    // K-Lines
     hist.forEach((d, i) => {
       const x = padding + i * stepX;
       const isUp = d.close >= d.open;
-      const color = isUp ? '#ef4444' : '#22c55e'; // RED UP, GREEN DOWN
+      const color = isUp ? '#ef4444' : '#22c55e';
       
       ctx.strokeStyle = color;
       ctx.lineWidth = 1;
@@ -181,7 +175,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       ctx.fillRect(x, Math.min(oY, cY), stepX * 0.7, Math.max(1, Math.abs(oY - cY)));
     });
 
-    // MAs
     const drawMA = (key: 'ma5'|'ma10'|'ma20', color: string) => {
       ctx.strokeStyle = color;
       ctx.lineWidth = 1.5;
@@ -199,7 +192,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       ctx.stroke();
     };
     drawMA('ma5', '#fef08a'); drawMA('ma10', '#f472b6'); drawMA('ma20', '#60a5fa');
-
   }, [data]);
 
   return (
@@ -227,10 +219,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                   </div>
                   <div className="text-[10px] text-slate-500 font-code tracking-[0.3em]">{data.code}</div>
                   <div className="flex items-baseline gap-4 mt-4">
-                    <span className="text-6xl font-code font-bold text-white tabular-nums">{data.currentPrice.toFixed(2)}</span>
-                    <div className={`font-code font-bold ${data.changePercent >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-                      <span className="text-2xl">{data.changePercent >= 0 ? '▲' : '▼'} {Math.abs(data.changeAmount)}</span>
-                      <span className="text-lg ml-2">({data.changePercent}%)</span>
+                    <span className="text-6xl font-code font-bold text-white tabular-nums">{(data.currentPrice || 0).toFixed(2)}</span>
+                    <div className={`font-code font-bold ${(data.changePercent || 0) >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+                      <span className="text-2xl">{(data.changePercent || 0) >= 0 ? '▲' : '▼'} {Math.abs(data.changeAmount || 0)}</span>
+                      <span className="text-lg ml-2">({data.changePercent || 0}%)</span>
                     </div>
                   </div>
                 </div>
@@ -241,12 +233,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
               </div>
 
               <div className="bg-black/60 border border-slate-800 p-4 shadow-2xl">
-                <div className="flex gap-4 text-[10px] font-code mb-4 border-b border-slate-800 pb-2">
-                   <span className="text-yellow-400">MA5: {data.history[data.history.length-1].ma5}</span>
-                   <span className="text-pink-400">MA10: {data.history[data.history.length-1].ma10}</span>
-                   <span className="text-blue-400">MA20: {data.history[data.history.length-1].ma20}</span>
-                   <span className="text-slate-500 ml-auto">{t.chartTitle}</span>
-                </div>
                 <canvas ref={mainCanvasRef} width={900} height={400} className="w-full h-[350px]" />
               </div>
 
