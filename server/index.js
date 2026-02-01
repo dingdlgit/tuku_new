@@ -107,19 +107,13 @@ app.post('/api/process', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Processing failed' }); }
 });
 
-const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
-
 function extractJson(text) {
   try {
     return JSON.parse(text);
   } catch (e) {
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {
-      try {
-        return JSON.parse(match[0]);
-      } catch (e2) {
-        throw new Error("JSON_PARSE_ERROR");
-      }
+      try { return JSON.parse(match[0]); } catch (e2) { throw new Error("JSON_PARSE_ERROR"); }
     }
     throw e;
   }
@@ -129,54 +123,45 @@ app.post('/api/analyze-stock', async (req, res) => {
   const { code } = req.body;
   if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
 
-  const today = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // 使用 flash 模型以获得极高的配额上限（非联网搜索模式下）
   const modelName = 'gemini-3-flash-preview';
 
-  const prompt = `Current Time: ${today}. Task: Analyze stock "${code}". 
-  Provide real-time price, market info, and investment strategy. 
-  If search fails, use your internal training data to estimate.
-  Return JSON only: {
-    "name": "string", "market": "string", "currentPrice": number, 
-    "changeAmount": number, "changePercent": number, "pe": number, "pb": number,
-    "turnoverRate": number, "amplitude": number, "trend": "STRONG|VOLATILE|WEAK",
-    "support": number, "resistance": number, "sentiment": number,
-    "isRealtime": boolean,
+  // 提示词明确要求日线级别数据，不强制要求实时性
+  const prompt = `Task: Perform a Daily-level Technical and Fundamental Analysis for stock code: "${code}".
+  Use your internal training data to estimate the latest available daily metrics (P/E, P/B, Market Cap).
+  If it is a Chinese stock like "000021", please refer to "深科技".
+  Return a JSON object ONLY:
+  {
+    "name": "string", 
+    "market": "string", 
+    "currentPrice": number, 
+    "changeAmount": number, 
+    "changePercent": number, 
+    "pe": number, 
+    "pb": number,
+    "turnoverRate": number, 
+    "amplitude": number, 
+    "trend": "STRONG|VOLATILE|WEAK",
+    "sentiment": number,
     "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
     "risks": ["string"]
   }`;
 
   try {
-    let result;
-    let usedRealtime = true;
-
-    try {
-      // 1. Try with Google Search (Preferred)
-      result = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json"
-        }
-      });
-    } catch (searchError) {
-      console.warn("Search Tool Quota Exceeded (429), falling back to offline mode...");
-      usedRealtime = false;
-      // 2. Fallback: Request WITHOUT Search Tool to bypass 429 quota on search
-      result = await ai.models.generateContent({
-        model: modelName,
-        contents: prompt + " (NOTE: Search tool is unavailable, use internal data)",
-        config: {
-          responseMimeType: "application/json"
-        }
-      });
-    }
+    // 移除 tools: [{ googleSearch: {} }]，彻底解决 429 问题
+    const result = await ai.models.generateContent({
+      model: modelName,
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
+    });
 
     const data = extractJson(result.text);
-    data.isRealtime = usedRealtime;
+    data.isRealtime = false; // 标记为非实时数据
 
-    // Generate K-line history
+    // 生成模拟的历史K线数据（基于AI给出的当前价）
     const history = [];
     let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
     for (let i = 0; i < 180; i++) {
@@ -192,6 +177,8 @@ app.post('/api/analyze-stock', async (req, res) => {
       });
       p = close;
     }
+    
+    // 计算移动平均线
     for (let i = 0; i < history.length; i++) {
         const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
         history[i].ma5 = ma(5);
@@ -202,11 +189,10 @@ app.post('/api/analyze-stock', async (req, res) => {
     return res.json({ ...data, history, code });
 
   } catch (err) {
-    console.error("Analysis Failed Completely:", err);
+    console.error("API Call Failed:", err);
     res.status(500).json({ 
       error: "ANALYSIS_FAILED", 
-      message: err.message,
-      suggestion: "API key quota exhausted. Please try again in a few minutes."
+      message: err.message
     });
   }
 });
