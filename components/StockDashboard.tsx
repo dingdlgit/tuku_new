@@ -43,7 +43,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       chartTitle: "HISTORICAL K-LINE TREND",
       source: "SOURCE",
       high52: "180D HIGH",
-      low52: "180D LOW"
+      low52: "180D LOW",
+      rangeLabel: "TIMELINE RANGE"
     },
     zh: {
       title: "图酷量化分析终端",
@@ -60,10 +61,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       trend: "趋势 / 信号",
       risk: "风险预警",
       sentiment: "多空情绪",
-      chartTitle: "历史 K 线走势图",
+      chartTitle: "180日 K线走势图",
       source: "行情源",
       high52: "180日最高",
-      low52: "180日最低"
+      low52: "180日最低",
+      rangeLabel: "时间跨度"
     }
   }[lang];
 
@@ -102,7 +104,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const paddingLeft = 75;
     const paddingRight = 40;
     const paddingTop = 75;
-    const paddingBottom = 40;
+    const paddingBottom = 60;
     ctx.clearRect(0, 0, w, h);
 
     const hist = data.history;
@@ -212,16 +214,34 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
               {data.history && data.history.length > 0 ? (
                 <div className="bg-slate-900/60 border border-slate-800 p-6 relative">
-                  <div className="absolute top-4 left-8 text-[9px] font-code text-slate-600 uppercase tracking-widest">{t.chartTitle}</div>
-                  <div className="absolute bottom-4 left-20 right-10 flex justify-between text-[8px] font-code text-slate-600 uppercase">
-                    <span>START: {data.history[0].date}</span>
-                    <span>END: {data.history[data.history.length - 1].date}</span>
+                  <div className="flex justify-between items-center mb-4 px-2">
+                    <div className="text-[10px] font-tech text-cyan-500 uppercase tracking-widest">{t.chartTitle}</div>
+                    <div className="flex gap-4 text-[9px] font-code text-slate-500 uppercase">
+                      <span className="text-amber-500">● MA5</span>
+                      <span className="text-pink-500">● MA10</span>
+                      <span className="text-blue-500">● MA20</span>
+                    </div>
                   </div>
-                  <canvas ref={mainCanvasRef} width={1200} height={450} className="w-full h-[400px]" />
+                  
+                  <div className="relative">
+                    <canvas ref={mainCanvasRef} width={1200} height={450} className="w-full h-[400px]" />
+                    
+                    {/* Date Range Labels */}
+                    <div className="flex justify-between mt-2 px-16 border-t border-slate-800 pt-2">
+                      <div className="flex flex-col">
+                        <span className="text-[9px] font-tech text-slate-500 uppercase">{t.rangeLabel} START</span>
+                        <span className="text-[11px] font-code text-cyan-500 font-bold">{data.history[0].date}</span>
+                      </div>
+                      <div className="flex flex-col items-end">
+                        <span className="text-[9px] font-tech text-slate-500 uppercase">{t.rangeLabel} END</span>
+                        <span className="text-[11px] font-code text-cyan-500 font-bold">{data.history[data.history.length - 1].date}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="bg-slate-900/60 border border-slate-800 h-64 flex items-center justify-center">
-                  <span className="text-[10px] font-code text-slate-600 animate-pulse tracking-widest">AWAITING HISTORICAL SIMULATION DATA</span>
+                  <span className="text-[10px] font-code text-slate-600 animate-pulse tracking-widest uppercase">AWAITING HISTORICAL SIMULATION DATA</span>
                 </div>
               )}
 
@@ -233,7 +253,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                  ].map(s => (
                    <div key={s.title} className="bg-slate-900 p-6 border border-slate-800 clip-button">
                       <h5 className={`text-${s.color}-500 text-[11px] font-tech mb-4 uppercase tracking-widest border-l-2 border-${s.color}-500 pl-4`}>{s.title}</h5>
-                      <p className="text-[12px] text-slate-400 font-code h-24 overflow-y-auto">{s.text || 'Inference engine currently throttled.'}</p>
+                      <p className="text-[12px] text-slate-400 font-code h-24 overflow-y-auto leading-relaxed">{s.text || 'Inference engine currently throttled.'}</p>
                    </div>
                  ))}
               </div>
@@ -252,11 +272,14 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                   </div>
                </div>
                <div className="bg-rose-950/10 border border-rose-900/30 p-8">
-                  <h4 className="text-[12px] font-tech font-bold text-rose-500 mb-6 uppercase tracking-widest flex items-center gap-2">{t.risk}</h4>
+                  <h4 className="text-[12px] font-tech font-bold text-rose-500 mb-6 uppercase tracking-widest flex items-center gap-2">
+                    <span className="w-1.5 h-1.5 bg-rose-500 rounded-full animate-ping"></span>
+                    {t.risk}
+                  </h4>
                   <ul className="space-y-4">
                      {(data.risks || ['No risks detected.']).map((r, i) => (
-                       <li key={i} className="text-[11px] text-slate-400 font-code flex items-start gap-4">
-                          <span className="mt-1.5 w-1.5 h-1.5 bg-rose-500 shrink-0"></span><span>{r}</span>
+                       <li key={i} className="text-[11px] text-slate-400 font-code flex items-start gap-4 leading-relaxed">
+                          <span className="mt-1.5 w-1 h-1 bg-rose-500 shrink-0"></span><span>{r}</span>
                        </li>
                      ))}
                   </ul>

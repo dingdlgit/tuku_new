@@ -102,8 +102,6 @@ async function fetchRealTimeQuote(ticker) {
     const json = await response.json();
     if (!json.data) return null;
     const d = json.data;
-    
-    // Dynamic scaling based on f59 (precision)
     const scale = Math.pow(10, d.f59 || 2);
     
     return {
@@ -163,31 +161,45 @@ app.post('/api/analyze-stock', async (req, res) => {
     fetchHistoricalKLines(ticker)
   ]);
 
-  // Derived 180-day High/Low (More reliable than API fields for ETFs)
-  let high180 = realQuote?.high || 0;
-  let low180 = realQuote?.low || 0;
+  // DERIVE 180-day High/Low from the history array for absolute accuracy
+  let high180 = 0;
+  let low180 = 0;
   if (history.length > 0) {
-    high180 = Math.max(...history.map(h => h.high), high180);
-    low180 = Math.min(...history.map(h => h.low), low180);
+    high180 = Math.max(...history.map(h => h.high));
+    low180 = Math.min(...history.map(h => h.low));
+    // Also compare with current day's real-time extreme prices
+    if (realQuote) {
+      high180 = Math.max(high180, realQuote.high);
+      low180 = Math.min(low180, realQuote.low);
+    }
+  } else if (realQuote) {
+    high180 = realQuote.high;
+    low180 = realQuote.low;
   }
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-flash-preview';
 
-  const trendContext = history.length > 0 ? history.slice(-5).map(h => `${h.date}: ${h.close}`).join(', ') : 'No recent history';
+  const trendContext = history.length > 0 ? history.slice(-10).map(h => `${h.date}: ${h.close}`).join(', ') : 'No history';
+  const targetLangName = userLang === 'zh' ? 'Chinese (Simplified)' : 'English';
+
   const contextData = realQuote ? 
-    `Real-time Quote for ${ticker} (${realQuote.name}): Price: ${realQuote.price}, Change: ${realQuote.changePercent}%, PE: ${realQuote.pe}, PB: ${realQuote.pb}. Recent Trend: [${trendContext}]. Range (180d): ${low180} - ${high180}.` :
-    `No real-time data found for ${ticker}. Analyze based on internal knowledge.`;
+    `Asset: ${ticker} (${realQuote.name}). Price: ${realQuote.price}, Change: ${realQuote.changePercent}%. PE: ${realQuote.pe}, PB: ${realQuote.pb}. 180-Day Range: [${low180.toFixed(3)} - ${high180.toFixed(3)}]. Recent 10-day Close Prices: [${trendContext}].` :
+    `No real-time data for ${ticker}. Perform general analysis.`;
 
   const prompt = `${contextData}
-  As a Quant Analyst, provide a report for "${ticker}". 
-  LANGUAGE REQUIREMENT: All descriptive fields must be in ${userLang === 'zh' ? 'Chinese (Simplified)' : 'English'}.
-  Identify market sentiment (0-100), strategy advice (Short-term/Long-term/Trend), and risks.
+  As a Senior Quant Strategist, provide a comprehensive market report.
+  CRITICAL: You MUST write ALL qualitative fields (shortTerm, longTerm, trendFollower, and risks) in ${targetLangName}.
+  Market Sentiment should be 0-100. Strategy advice should be actionable based on the provided trend.
   OUTPUT JSON ONLY:
   {
     "sentiment": number,
-    "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
-    "risks": ["string"]
+    "strategyAdvice": { 
+      "shortTerm": "string in ${targetLangName}", 
+      "longTerm": "string in ${targetLangName}", 
+      "trendFollower": "string in ${targetLangName}" 
+    },
+    "risks": ["string array in ${targetLangName}"]
   }`;
 
   try {
@@ -207,8 +219,8 @@ app.post('/api/analyze-stock', async (req, res) => {
       changePercent: realQuote?.changePercent || 0,
       pe: realQuote?.pe || 0,
       pb: realQuote?.pb || 0,
-      high52: high180, // Use Derived High
-      low52: low180,   // Use Derived Low
+      high52: high180, 
+      low52: low180,
       sentiment: aiData.sentiment,
       strategyAdvice: aiData.strategyAdvice,
       risks: aiData.risks,
@@ -235,12 +247,17 @@ app.post('/api/analyze-stock', async (req, res) => {
 
   } catch (err) {
     if (realQuote) {
+      const fallbackRisks = userLang === 'zh' ? ["AI 分析暂时不可用。"] : ["AI Analysis currently unavailable."];
+      const fallbackStrategy = userLang === 'zh' ? 
+        { shortTerm: "AI 繁忙", longTerm: "AI 繁忙", trendFollower: "AI 繁忙" } :
+        { shortTerm: "AI Busy", longTerm: "AI Busy", trendFollower: "AI Busy" };
+        
       return res.json({
         code: ticker, name: realQuote.name, currentPrice: realQuote.price, changePercent: realQuote.changePercent,
         pe: realQuote.pe, pb: realQuote.pb, high52: high180, low52: low180,
         history, dataSource: "Real-time API (AI Error Fallback)",
-        strategyAdvice: { shortTerm: "AI Busy", longTerm: "AI Busy", trendFollower: "AI Busy" },
-        risks: ["Gemini API unavailable."]
+        strategyAdvice: fallbackStrategy,
+        risks: fallbackRisks
       });
     }
     res.status(500).json({ error: "FAIL", message: err.message });
