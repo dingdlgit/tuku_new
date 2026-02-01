@@ -2,6 +2,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { StockAnalysisResult, Language, OHLC } from '../types';
 
+interface ExtendedStockResult extends StockAnalysisResult {
+  isRealtime?: boolean;
+}
+
 interface StockDashboardProps {
   lang: Language;
 }
@@ -9,7 +13,7 @@ interface StockDashboardProps {
 export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<StockAnalysisResult | null>(null);
+  const [data, setData] = useState<ExtendedStockResult | null>(null);
   const mainCanvasRef = useRef<HTMLCanvasElement>(null);
 
   const t = {
@@ -17,7 +21,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       title: "QUANTUM TRADING TERMINAL",
       inputPlaceholder: "STOCK CODE (e.g. 000021, 600519, AAPL)",
       analyze: "INITIATE SCAN",
-      analyzing: "SEARCHING REAL-TIME MARKET...",
+      analyzing: "CONNECTING TO DATA STREAM...",
       metrics: "REAL-TIME METRICS",
       pe: "P/E", pb: "P/B", turnover: "Turnover", amp: "Amplitude",
       strategy: "AI STRATEGY ANALYSIS",
@@ -27,7 +31,9 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       risk: "RISK PROFILE",
       sentiment: "SENTIMENT",
       chartTitle: "180-DAY K-LINE (GROUNDED SIMULATION)",
-      support: "Support", resistance: "Resistance"
+      support: "Support", resistance: "Resistance",
+      realtimeStatus: "LIVE_SEARCH",
+      fallbackStatus: "INTERNAL_KNOWLEDGE"
     },
     zh: {
       title: "量子金融交易终端",
@@ -43,7 +49,9 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       risk: "风险预警",
       sentiment: "多空情绪指数",
       chartTitle: "180日 K线走势 (实时锚定模拟)",
-      support: "支撑位", resistance: "阻力位"
+      support: "支撑位", resistance: "阻力位",
+      realtimeStatus: "实时联网数据",
+      fallbackStatus: "离线分析模式 (由于配额限制)"
     }
   }[lang];
 
@@ -59,12 +67,15 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         body: JSON.stringify({ code })
       });
 
-      if (!response.ok) throw new Error(await response.text());
+      if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Server Error');
+      }
       const result = await response.json();
       setData(result);
-    } catch (e) {
+    } catch (e: any) {
       console.error("Analysis Error:", e);
-      alert(`Analysis failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      alert(`Terminal Error: ${e.message}`);
     } finally {
       setLoading(false);
     }
@@ -127,19 +138,33 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       <div className="max-w-6xl w-full mx-auto space-y-6 pb-12">
         <div className="text-center">
           <h2 className="text-4xl font-tech font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-cyan-400 uppercase tracking-widest">{t.title}</h2>
-          <p className="text-[10px] text-slate-500 font-code mt-2 uppercase tracking-[0.2em]">Live Grounding powered by Backend AI Node</p>
+          <div className="flex justify-center gap-4 mt-2">
+            <p className="text-[10px] text-slate-500 font-code uppercase tracking-[0.2em]">Live Grounding powered by Backend AI Node</p>
+          </div>
         </div>
 
         <div className="flex gap-4 max-w-2xl mx-auto bg-slate-900/80 p-1.5 border border-cyan-500/30 backdrop-blur-xl clip-button">
           <input type="text" value={code} onChange={(e) => setCode(e.target.value)} placeholder={t.inputPlaceholder} className="flex-1 bg-transparent border-none text-white font-code px-5 focus:outline-none text-lg" onKeyDown={(e) => e.key === 'Enter' && handleAnalyze()} />
-          <button onClick={handleAnalyze} disabled={loading} className="bg-cyan-600 hover:bg-cyan-500 text-white font-tech px-10 py-3 disabled:opacity-50 font-bold transition-all">{loading ? t.analyzing : t.analyze}</button>
+          <button onClick={handleAnalyze} disabled={loading} className="bg-cyan-600 hover:bg-cyan-500 text-white font-tech px-10 py-3 disabled:opacity-50 font-bold transition-all relative overflow-hidden group">
+            <span className="relative z-10">{loading ? t.analyzing : t.analyze}</span>
+            {loading && <div className="absolute inset-0 bg-cyan-400/20 animate-pulse"></div>}
+          </button>
         </div>
 
         {data && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-in fade-in duration-700">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 animate-in fade-in slide-in-from-bottom-4 duration-700">
             <div className="lg:col-span-3 space-y-6">
-              <div className="bg-slate-900/60 border border-slate-800 p-8 flex flex-wrap items-center justify-between relative backdrop-blur-sm">
-                <div className="absolute top-0 left-0 w-2 h-full bg-cyan-500"></div>
+              <div className="bg-slate-900/60 border border-slate-800 p-8 flex flex-wrap items-center justify-between relative backdrop-blur-sm overflow-hidden">
+                <div className={`absolute top-0 left-0 w-2 h-full ${data.isRealtime ? 'bg-cyan-500' : 'bg-amber-500'}`}></div>
+                
+                {/* Status Indicator */}
+                <div className="absolute top-2 right-4 flex items-center gap-2">
+                    <span className={`w-2 h-2 rounded-full ${data.isRealtime ? 'bg-cyan-400 animate-pulse shadow-[0_0_8px_#22d3ee]' : 'bg-amber-500'}`}></span>
+                    <span className={`text-[9px] font-code uppercase tracking-tighter ${data.isRealtime ? 'text-cyan-400' : 'text-amber-500'}`}>
+                        {data.isRealtime ? t.realtimeStatus : t.fallbackStatus}
+                    </span>
+                </div>
+
                 <div>
                   <div className="flex items-center gap-3">
                     <span className="text-white font-tech text-xl font-bold">{data.name}</span>
@@ -154,13 +179,14 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                     </div>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="text-right hidden sm:block">
                   <div className="text-xs text-slate-500 font-tech uppercase">{t.sentiment}</div>
-                  <div className="text-5xl font-code font-bold text-purple-400">{data.sentiment}%</div>
+                  <div className="text-5xl font-code font-bold text-purple-400 drop-shadow-[0_0_10px_rgba(168,85,247,0.3)]">{data.sentiment}%</div>
                 </div>
               </div>
 
-              <div className="bg-black/60 border border-slate-800 p-4 shadow-2xl overflow-hidden">
+              <div className="bg-black/60 border border-slate-800 p-4 shadow-2xl overflow-hidden relative">
+                <div className="absolute top-4 left-6 text-[10px] font-code text-slate-600 uppercase z-10">K-Line Visualization Matrix</div>
                 <canvas ref={mainCanvasRef} width={900} height={400} className="w-full h-[350px]" />
               </div>
 
@@ -170,9 +196,9 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                    { title: t.longTerm, color: 'purple', text: data.strategyAdvice.longTerm },
                    { title: t.trend, color: 'blue', text: data.strategyAdvice.trendFollower }
                  ].map(s => (
-                   <div key={s.title} className="bg-slate-900/80 p-5 border border-slate-800 clip-button">
+                   <div key={s.title} className="bg-slate-900/80 p-5 border border-slate-800 clip-button group hover:border-slate-600 transition-colors">
                       <h5 className={`text-${s.color}-400 text-xs font-tech mb-3 uppercase tracking-tighter`}>{s.title}</h5>
-                      <p className="text-[12px] text-slate-300 leading-relaxed font-code">{s.text}</p>
+                      <p className="text-[12px] text-slate-300 leading-relaxed font-code group-hover:text-white transition-colors">{s.text}</p>
                    </div>
                  ))}
               </div>
@@ -199,7 +225,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                   <ul className="space-y-3">
                      {data.risks.map((r, i) => (
                        <li key={i} className="text-[12px] text-red-200/70 font-code flex items-start gap-3">
-                          <span className="mt-1.5 w-1.5 h-1.5 bg-red-500 shrink-0"></span>{r}
+                          <span className="mt-1.5 w-1.5 h-1.5 bg-red-500 shrink-0 shadow-[0_0_5px_red]"></span>{r}
                        </li>
                      ))}
                   </ul>

@@ -107,22 +107,18 @@ app.post('/api/process', async (req, res) => {
   } catch (err) { res.status(500).json({ error: 'Processing failed' }); }
 });
 
-// Helper for waiting
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Robust JSON extractor from AI text
 function extractJson(text) {
   try {
-    // Try simple parse
     return JSON.parse(text);
   } catch (e) {
-    // Try cleaning markdown blocks
     const match = text.match(/\{[\s\S]*\}/);
     if (match) {
       try {
         return JSON.parse(match[0]);
       } catch (e2) {
-        throw new Error("Could not parse AI response as JSON");
+        throw new Error("JSON_PARSE_ERROR");
       }
     }
     throw e;
@@ -131,34 +127,32 @@ function extractJson(text) {
 
 app.post('/api/analyze-stock', async (req, res) => {
   const { code } = req.body;
-  
-  if (!process.env.API_KEY || process.env.API_KEY === "undefined" || process.env.API_KEY === "") {
-    return res.status(500).json({ error: "API_KEY_MISSING" });
-  }
+  if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
 
   const today = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-flash-preview';
 
-  const prompt = `Current Time: ${today}. Financial Analysis Task:
-  Search for the LATEST TRADING DATA for stock "${code}". 
-  If it's "000021", identify as "深科技" on SZSE (Current price should be around 32-33 CNY in Jan 2025).
-  Return JSON:
-  {
+  const prompt = `Current Time: ${today}. Task: Analyze stock "${code}". 
+  Provide real-time price, market info, and investment strategy. 
+  If search fails, use your internal training data to estimate.
+  Return JSON only: {
     "name": "string", "market": "string", "currentPrice": number, 
     "changeAmount": number, "changePercent": number, "pe": number, "pb": number,
     "turnoverRate": number, "amplitude": number, "trend": "STRONG|VOLATILE|WEAK",
     "support": number, "resistance": number, "sentiment": number,
+    "isRealtime": boolean,
     "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
     "risks": ["string"]
   }`;
 
-  let attempts = 0;
-  const maxAttempts = 3;
+  try {
+    let result;
+    let usedRealtime = true;
 
-  while (attempts < maxAttempts) {
     try {
-      const result = await ai.models.generateContent({
+      // 1. Try with Google Search (Preferred)
+      result = await ai.models.generateContent({
         model: modelName,
         contents: prompt,
         config: {
@@ -166,57 +160,54 @@ app.post('/api/analyze-stock', async (req, res) => {
           responseMimeType: "application/json"
         }
       });
-
-      const data = extractJson(result.text);
-
-      // Generate history
-      const history = [];
-      let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
-      for (let i = 0; i < 180; i++) {
-        const change = (Math.random() - 0.5) * 0.04;
-        const close = p * (1 + change);
-        history.push({
-          date: new Date(Date.now() - (180 - i) * 86400000).toISOString().split('T')[0],
-          open: parseFloat(p.toFixed(2)),
-          high: parseFloat((Math.max(p, close) * 1.01).toFixed(2)),
-          low: parseFloat((Math.min(p, close) * 0.99).toFixed(2)),
-          close: parseFloat(close.toFixed(2)),
-          volume: Math.floor(1000000 + Math.random() * 5000000)
-        });
-        p = close;
-      }
-      for (let i = 0; i < history.length; i++) {
-          const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
-          history[i].ma5 = ma(5);
-          history[i].ma10 = ma(10);
-          history[i].ma20 = ma(20);
-      }
-
-      return res.json({ ...data, history, code });
-
-    } catch (err) {
-      attempts++;
-      const isRateLimit = err.message?.includes('429');
-      
-      console.error(`Attempt ${attempts} failed:`, err.message);
-
-      if (isRateLimit && attempts < maxAttempts) {
-        // Wait longer each time: 2s, 4s...
-        await sleep(attempts * 2000);
-        continue;
-      }
-
-      // If last attempt or not a rate limit error that can be fixed by waiting
-      if (attempts >= maxAttempts) {
-        return res.status(500).json({ 
-          error: isRateLimit ? "API Quota Exceeded. Please try again in 1 minute." : "Service error: " + err.message,
-          suggestion: "Gemini Free Tier has strict limits. Try again later."
-        });
-      }
-      
-      // For other errors, just break and return
-      break;
+    } catch (searchError) {
+      console.warn("Search Tool Quota Exceeded (429), falling back to offline mode...");
+      usedRealtime = false;
+      // 2. Fallback: Request WITHOUT Search Tool to bypass 429 quota on search
+      result = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt + " (NOTE: Search tool is unavailable, use internal data)",
+        config: {
+          responseMimeType: "application/json"
+        }
+      });
     }
+
+    const data = extractJson(result.text);
+    data.isRealtime = usedRealtime;
+
+    // Generate K-line history
+    const history = [];
+    let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
+    for (let i = 0; i < 180; i++) {
+      const change = (Math.random() - 0.5) * 0.04;
+      const close = p * (1 + change);
+      history.push({
+        date: new Date(Date.now() - (180 - i) * 86400000).toISOString().split('T')[0],
+        open: parseFloat(p.toFixed(2)),
+        high: parseFloat((Math.max(p, close) * 1.01).toFixed(2)),
+        low: parseFloat((Math.min(p, close) * 0.99).toFixed(2)),
+        close: parseFloat(close.toFixed(2)),
+        volume: Math.floor(1000000 + Math.random() * 5000000)
+      });
+      p = close;
+    }
+    for (let i = 0; i < history.length; i++) {
+        const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
+        history[i].ma5 = ma(5);
+        history[i].ma10 = ma(10);
+        history[i].ma20 = ma(20);
+    }
+
+    return res.json({ ...data, history, code });
+
+  } catch (err) {
+    console.error("Analysis Failed Completely:", err);
+    res.status(500).json({ 
+      error: "ANALYSIS_FAILED", 
+      message: err.message,
+      suggestion: "API key quota exhausted. Please try again in a few minutes."
+    });
   }
 });
 
