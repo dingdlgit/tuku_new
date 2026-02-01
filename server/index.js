@@ -124,17 +124,24 @@ app.post('/api/analyze-stock', async (req, res) => {
   if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
 
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  // 使用 flash 模型以获得极高的配额上限（非联网搜索模式下）
   const modelName = 'gemini-3-flash-preview';
 
-  // 提示词明确要求日线级别数据，不强制要求实时性
-  const prompt = `Task: Perform a Daily-level Technical and Fundamental Analysis for stock code: "${code}".
-  Use your internal training data to estimate the latest available daily metrics (P/E, P/B, Market Cap).
-  If it is a Chinese stock like "000021", please refer to "深科技".
-  Return a JSON object ONLY:
+  // 增强版提示词：加入代码前缀逻辑和防误判声明
+  const prompt = `You are a Senior Financial Data Analyst. 
+  Target Ticker: "${code}"
+  
+  Identification Logic:
+  - If code starts with "513", it is likely a Cross-border ETF (e.g. 513050 is China Internet 50, 513090 is E Fund CSI Hong Kong Securities ETF).
+  - If code is "513090", it is definitively "易方达中证香港证券投资主题ETF".
+  - 6xxxxx = Shanghai A-shares.
+  - 0xxxxx/3xxxxx = Shenzhen A-shares/ChiNext.
+  - 0xxxx (5 digits) = HK Stocks.
+  
+  Please provide a Daily-level Technical and Fundamental Analysis.
+  Return JSON ONLY:
   {
-    "name": "string", 
-    "market": "string", 
+    "name": "Exact official name", 
+    "market": "SH/SZ/HK/US/ETF", 
     "currentPrice": number, 
     "changeAmount": number, 
     "changePercent": number, 
@@ -149,7 +156,6 @@ app.post('/api/analyze-stock', async (req, res) => {
   }`;
 
   try {
-    // 移除 tools: [{ googleSearch: {} }]，彻底解决 429 问题
     const result = await ai.models.generateContent({
       model: modelName,
       contents: prompt,
@@ -159,28 +165,26 @@ app.post('/api/analyze-stock', async (req, res) => {
     });
 
     const data = extractJson(result.text);
-    data.isRealtime = false; // 标记为非实时数据
+    data.isRealtime = false;
 
-    // 生成模拟的历史K线数据（基于AI给出的当前价）
     const history = [];
-    let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
+    let p = (data.currentPrice || 1.0) / (1 + (data.changePercent || 0) / 100);
     for (let i = 0; i < 180; i++) {
-      const change = (Math.random() - 0.5) * 0.04;
+      const change = (Math.random() - 0.5) * 0.03;
       const close = p * (1 + change);
       history.push({
         date: new Date(Date.now() - (180 - i) * 86400000).toISOString().split('T')[0],
-        open: parseFloat(p.toFixed(2)),
-        high: parseFloat((Math.max(p, close) * 1.01).toFixed(2)),
-        low: parseFloat((Math.min(p, close) * 0.99).toFixed(2)),
-        close: parseFloat(close.toFixed(2)),
-        volume: Math.floor(1000000 + Math.random() * 5000000)
+        open: parseFloat(p.toFixed(3)),
+        high: parseFloat((Math.max(p, close) * 1.005).toFixed(3)),
+        low: parseFloat((Math.min(p, close) * 0.995).toFixed(3)),
+        close: parseFloat(close.toFixed(3)),
+        volume: Math.floor(500000 + Math.random() * 2000000)
       });
       p = close;
     }
     
-    // 计算移动平均线
     for (let i = 0; i < history.length; i++) {
-        const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(2));
+        const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(3));
         history[i].ma5 = ma(5);
         history[i].ma10 = ma(10);
         history[i].ma20 = ma(20);
