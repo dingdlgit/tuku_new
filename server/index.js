@@ -23,6 +23,10 @@ const PROCESSED_DIR = path.join(__dirname, 'processed');
 const DATA_DIR = path.join(__dirname, 'data');
 const STATS_FILE = path.join(DATA_DIR, 'stats.json');
 
+// Simple In-Memory Cache to prevent 429 Quota Exhaustion
+const stockCache = new Map();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
 [UPLOAD_DIR, PROCESSED_DIR, DATA_DIR].forEach(dir => {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 });
@@ -122,92 +126,95 @@ app.post('/api/analyze-stock', async (req, res) => {
   const { code, forceSearch } = req.body;
   if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
 
+  const ticker = code.trim().toUpperCase();
+
+  // Check Cache first to save quota
+  if (!forceSearch && stockCache.has(ticker)) {
+    const cached = stockCache.get(ticker);
+    if (Date.now() - cached.timestamp < CACHE_TTL) {
+      console.log(`Serving cached data for ${ticker}`);
+      return res.json({ ...cached.data, isCached: true });
+    }
+  }
+
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   const modelName = 'gemini-3-flash-preview';
 
-  const prompt = `You are a Professional Quantitative Analyst. 
-  Task: Identify and analyze Ticker "${code}".
-  
-  CRITICAL MAPPING HINTS:
-  - If code is "513090", it is definitively "易方达中证香港证券投资主题ETF" (E Fund HK Securities ETF).
-  - If code starts with "513", "510", "159", it is likely an ETF.
-  
-  ANALYSIS PROTOCOL:
-  1. Use Google Search to get: Real-time price, Change%, Premium/Discount Rate (for ETFs), 52-Week High/Low, Turnover, and Volume.
-  2. For 513090, specifically check the performance of the underlying 'CSI Hong Kong Securities Index'.
-  3. Determine the "Sentiment Score" based on recent news and technical indicators.
-
-  OUTPUT JSON ONLY:
+  const prompt = `Quant Analysis Request for "${ticker}". 
+  1. Identify the asset. 513090 = E Fund HK Securities ETF.
+  2. Use Google Search to get: Price, Change%, Premium/Discount Rate, 52-week High/Low.
+  3. Output JSON ONLY.
   {
-    "name": "Official Full Name",
-    "market": "SH/SZ/HK/US/ETF",
+    "name": "string",
+    "market": "string",
     "currentPrice": number,
     "changePercent": number,
     "premiumRate": number,
-    "pe": number,
-    "pb": number,
     "high52": number,
     "low52": number,
     "turnover": number,
     "sentiment": number,
-    "trendDescription": "Brief description of 180-day trend",
-    "strategyAdvice": {
-      "shortTerm": "Advice",
-      "longTerm": "Advice",
-      "trendFollower": "Advice"
-    },
-    "risks": ["Risk 1", "Risk 2"]
+    "strategyAdvice": { "shortTerm": "string", "longTerm": "string", "trendFollower": "string" },
+    "risks": ["string"]
   }`;
 
   try {
-    const result = await ai.models.generateContent({
-      model: modelName,
-      contents: prompt,
-      config: { 
-        responseMimeType: "application/json",
-        tools: [{ googleSearch: {} }]
+    let result;
+    try {
+      // Primary attempt with Search Tool
+      result = await ai.models.generateContent({
+        model: modelName,
+        contents: prompt,
+        config: { 
+          responseMimeType: "application/json",
+          tools: [{ googleSearch: {} }]
+        }
+      });
+    } catch (apiErr) {
+      // If 429 or Search tool failure, retry without search (Lite Mode)
+      if (apiErr.message.includes('429') || apiErr.status === 'RESOURCE_EXHAUSTED') {
+        console.warn("Quota exhausted, retrying in Lite Mode (no search)...");
+        result = await ai.models.generateContent({
+          model: modelName,
+          contents: `Lite Analysis (Database Only) for Ticker "${ticker}". Output the same JSON schema as before.`,
+          config: { responseMimeType: "application/json" }
+        });
+      } else {
+        throw apiErr;
       }
-    });
+    }
 
     const data = extractJson(result.text);
     data.lastUpdated = new Date().toISOString();
     data.isRealtime = !!result.candidates?.[0]?.groundingMetadata;
 
-    // --- REFINED K-LINE GENERATION ALGORITHM ---
+    // K-Line Simulation Logic (programmatic to save LLM tokens)
     const history = [];
     const DAYS = 180;
     const high = data.high52 || data.currentPrice * 1.15;
     const low = data.low52 || data.currentPrice * 0.85;
-    
-    // We simulate from 180 days ago towards the current price
-    // We use a random walk with mean reversion to 52w average to keep it realistic
-    const avg52 = (high + low) / 2;
-    let p = avg52; // Start from the middle point 6 months ago
+    let p = (high + low) / 2;
     
     for (let i = 0; i < DAYS; i++) {
-      // Logic: Gradually drift p towards data.currentPrice
-      const remainingDays = DAYS - i;
-      const drift = (data.currentPrice - p) / remainingDays;
-      const volatility = p * 0.015; // 1.5% daily vol
-      const change = drift + (Math.random() - 0.5) * volatility;
-      
-      const close = Math.max(low * 0.98, Math.min(high * 1.02, p + change));
+      const remaining = DAYS - i;
+      const drift = (data.currentPrice - p) / remaining;
+      const vol = p * 0.012;
+      const change = drift + (Math.random() - 0.5) * vol;
+      const close = Math.max(low * 0.95, Math.min(high * 1.05, p + change));
       
       history.push({
         date: new Date(Date.now() - (DAYS - i) * 86400000).toISOString().split('T')[0],
         open: parseFloat(p.toFixed(3)),
-        high: parseFloat((Math.max(p, close) * (1 + Math.random() * 0.005)).toFixed(3)),
-        low: parseFloat((Math.min(p, close) * (1 - Math.random() * 0.005)).toFixed(3)),
+        high: parseFloat((Math.max(p, close) * (1 + Math.random() * 0.004)).toFixed(3)),
+        low: parseFloat((Math.min(p, close) * (1 - Math.random() * 0.004)).toFixed(3)),
         close: parseFloat(close.toFixed(3)),
         volume: Math.floor(1000000 + Math.random() * 5000000)
       });
       p = close;
     }
-    
-    // Final candle must match current price
     history[history.length - 1].close = data.currentPrice;
 
-    // MA Calculations
+    // Moving Averages
     for (let i = 0; i < history.length; i++) {
         const ma = (d) => i < d - 1 ? null : parseFloat((history.slice(i - d + 1, i + 1).reduce((a, b) => a + b.close, 0) / d).toFixed(3));
         history[i].ma5 = ma(5);
@@ -215,11 +222,23 @@ app.post('/api/analyze-stock', async (req, res) => {
         history[i].ma20 = ma(20);
     }
 
-    return res.json({ ...data, history, code });
+    const finalResult = { ...data, history, code: ticker };
+    
+    // Save to cache
+    stockCache.set(ticker, {
+      data: finalResult,
+      timestamp: Date.now()
+    });
+
+    return res.json(finalResult);
 
   } catch (err) {
-    console.error("Analysis Failed:", err);
-    res.status(500).json({ error: "ANALYSIS_FAILED", message: err.message });
+    console.error("Analysis Critical Failure:", err);
+    res.status(err.status === 429 ? 429 : 500).json({ 
+      error: "ANALYSIS_FAILED", 
+      message: err.message,
+      isQuotaError: err.status === 429 
+    });
   }
 });
 
