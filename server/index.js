@@ -116,12 +116,22 @@ app.post('/api/analyze-stock', async (req, res) => {
     });
   }
 
-  const today = new Date().toISOString().split('T')[0];
+  const today = new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' });
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const prompt = `Today is ${today}. Please act as a professional financial analyst. 
-  SEARCH for the LATEST REAL-TIME financial data (price, change, fundamentals) for stock "${code}". 
-  Pay special attention to accuracy for A-shares (e.g., if code is 000021, its current price in Jan 2025 should be around 30-33 CNY).
-  Return result ONLY in valid JSON format: {
+  
+  // We use gemini-3-flash-preview as primary because it has much higher rate limits (RPM) 
+  // than the pro model on free tier, avoiding the 429 error.
+  const modelName = 'gemini-3-flash-preview';
+
+  const prompt = `Current Time: ${today}. You are a financial expert. 
+  Task: Use Google Search to find the EXACT real-time price and trading data for stock code "${code}".
+  
+  Critical Data for A-shares:
+  - If it is "000021", its name is "深科技" and it trades on SZSE.
+  - Find the price AS OF TODAY. If the market is closed, return the last closing price.
+  
+  Return ONLY a valid JSON object:
+  {
     "name": "string",
     "market": "string",
     "currentPrice": number,
@@ -140,32 +150,18 @@ app.post('/api/analyze-stock', async (req, res) => {
   }`;
 
   try {
-    let result;
-    try {
-      // Using gemini-3-pro-preview for highest accuracy with search
-      result = await ai.models.generateContent({
-        model: 'gemini-3-pro-preview',
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json"
-        }
-      });
-    } catch (searchError) {
-      console.warn("Pro-Search failed, trying Flash-Search fallback...", searchError.message);
-      result = await ai.models.generateContent({
-        model: 'gemini-3-flash-preview',
-        contents: prompt,
-        config: {
-          tools: [{ googleSearch: {} }],
-          responseMimeType: "application/json"
-        }
-      });
-    }
+    const result = await ai.models.generateContent({
+      model: modelName,
+      contents: prompt,
+      config: {
+        tools: [{ googleSearch: {} }],
+        responseMimeType: "application/json"
+      }
+    });
 
     const data = JSON.parse(result.text);
 
-    // History Generation
+    // Mock history generation based on the found real price
     const history = [];
     let p = (data.currentPrice || 10) / (1 + (data.changePercent || 0) / 100);
     for (let i = 0; i < 180; i++) {
@@ -191,8 +187,20 @@ app.post('/api/analyze-stock', async (req, res) => {
 
     res.json({ ...data, history, code });
   } catch (err) {
-    console.error("Gemini Final Error:", err);
-    res.status(500).json({ error: "Gemini API Error: " + err.message });
+    console.error("Gemini API Error Detail:", err);
+    
+    let errorMsg = err.message;
+    // Check for 429 specifically in the message
+    if (err.message && err.message.includes('429')) {
+      errorMsg = "API Quota Exceeded (429). Please wait a minute before trying again. The Flash model allows more requests than Pro.";
+    } else if (err.message && err.message.includes('RECITATION')) {
+      errorMsg = "Content filtered by safety or recitation policy. Try a different stock code.";
+    }
+
+    res.status(500).json({ 
+      error: errorMsg,
+      raw: err.message 
+    });
   }
 });
 
