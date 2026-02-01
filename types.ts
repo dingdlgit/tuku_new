@@ -16,20 +16,19 @@ export type WatermarkPosition = 'top-left' | 'top-right' | 'center' | 'bottom-le
 
 export interface ProcessOptions {
   format: ImageFormat;
-  quality: number; // 1-100
+  quality: number;
   width: number | null;
   height: number | null;
   maintainAspectRatio: boolean;
   resizeMode: 'cover' | 'contain' | 'fill' | 'inside' | 'outside';
-  rotate: number; // degrees
+  rotate: number;
   flipX: boolean;
   flipY: boolean;
   grayscale: boolean;
-  blur: number; // 0-100
+  blur: number;
   sharpen: boolean;
   watermarkText: string;
   watermarkPosition: WatermarkPosition;
-  // New fields for RAW handling
   rawWidth?: number;
   rawHeight?: number;
   rawPixelFormat?: RawPixelFormat;
@@ -53,21 +52,44 @@ export interface ProcessResponse {
   size: number;
 }
 
-// --- Stock Analysis Types ---
+// --- Enhanced Stock Analysis Types ---
 
-export interface StockDataPoint {
+export interface OHLC {
   date: string;
-  price: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  ma5?: number;
+  ma10?: number;
+  ma20?: number;
 }
 
 export interface StockAnalysisResult {
   code: string;
-  market: string; // Market identifier (e.g., A-Share, HK, US)
+  market: string;
+  name: string;
   currentPrice: number;
+  changeAmount: number;
   changePercent: number;
-  trend: 'STRONG' | 'VOLATILE' | 'WEAK'; // 偏强 / 震荡 / 偏弱
-  techAnalysis: string; // 技术面解读
-  strategy: string; // 操作思路
-  risks: string; // 风险点
-  history: StockDataPoint[]; // For charting
+  // Fundamental
+  pe: number;
+  pb: number;
+  turnoverRate: number;
+  amplitude: number;
+  // Technical Stats
+  trend: 'STRONG' | 'VOLATILE' | 'WEAK';
+  support: number;
+  resistance: number;
+  sentiment: number; // 0-100
+  // Textual Analysis
+  techAnalysis: string;
+  strategyAdvice: {
+    shortTerm: string; // 打板选手/短线
+    longTerm: string;  // 价值投资
+    trendFollower: string; // 均线/趋势
+  };
+  risks: string[];
+  history: OHLC[];
 }
