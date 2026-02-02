@@ -152,9 +152,7 @@ app.post('/api/process', async (req, res) => {
         const buffer = fs.readFileSync(filePath);
         const bmpData = bmp.decode(buffer);
         
-        // CRITICAL FIX: bmp-js decodes into ABGR (Alpha, Blue, Green, Red).
-        // Sharp expects RGBA (Red, Green, Blue, Alpha).
-        // We must manually swap the channels to prevent dark/black/inverted color images.
+        // bmp-js decodes into ABGR. Sharp expects RGBA.
         const abgr = bmpData.data;
         const rgba = Buffer.alloc(abgr.length);
         
@@ -189,12 +187,45 @@ app.post('/api/process', async (req, res) => {
     if (options.width || options.height) p = p.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
     
     // --- Output Format ---
-    if (targetFormat === 'png') p = p.png(); 
-    else if (targetFormat === 'webp') p = p.webp({ quality: options.quality }); 
-    else if (targetFormat === 'bmp') p = p.toFormat('bmp');
-    else p = p.jpeg({ quality: options.quality });
+    if (targetFormat === 'bmp') {
+      // FIX: Sharp throws error for 'bmp' format output. We must encode manually using bmp-js.
+      
+      // 1. Force sRGB and Alpha channel to ensure we have standard 4-channel RGBA
+      // Even if grayscale, this makes it 4 channels (R=G=B, A=255) which matches bmp-js expectation.
+      p = p.toColorspace('srgb').ensureAlpha();
+      
+      // 2. Get raw buffer
+      const { data: rgbaBuffer, info } = await p.raw().toBuffer({ resolveWithObject: true });
+      
+      // 3. Convert RGBA (Sharp) -> ABGR (bmp-js)
+      const abgrBuffer = Buffer.alloc(rgbaBuffer.length);
+      for (let i = 0; i < rgbaBuffer.length; i += 4) {
+        // Sharp: R, G, B, A
+        // BMP:   A, B, G, R
+        abgrBuffer[i]   = rgbaBuffer[i+3]; // A
+        abgrBuffer[i+1] = rgbaBuffer[i+2]; // B
+        abgrBuffer[i+2] = rgbaBuffer[i+1]; // G
+        abgrBuffer[i+3] = rgbaBuffer[i];   // R
+      }
 
-    await p.toFile(outputPath);
+      // 4. Encode to BMP
+      const bmpData = bmp.encode({
+        data: abgrBuffer,
+        width: info.width,
+        height: info.height
+      });
+
+      // 5. Write to disk
+      fs.writeFileSync(outputPath, bmpData.data);
+      
+    } else {
+      if (targetFormat === 'png') p = p.png(); 
+      else if (targetFormat === 'webp') p = p.webp({ quality: options.quality }); 
+      else p = p.jpeg({ quality: options.quality });
+
+      await p.toFile(outputPath);
+    }
+
     incrementStats();
     res.json({ url: `/api/processed/${outFilename}`, filename: outFilename, size: fs.statSync(outputPath).size });
 
