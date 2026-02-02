@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
+import bmp from 'bmp-js'; // Restore BMP support
 import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -52,10 +53,34 @@ app.get('/api/stats', (req, res) => {
 
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
+  
+  // FIX: Determine ID *before* the try/catch block.
+  // This ensures that even if metadata extraction fails (triggering catch),
+  // we return the SAME ID that matches the file on disk.
+  const fileId = path.basename(req.file.filename, path.extname(req.file.filename));
+
   try {
     const meta = await sharp(req.file.path).metadata();
-    res.json({ id: path.basename(req.file.filename, path.extname(req.file.filename)), filename: req.file.filename, url: `/api/files/${req.file.filename}`, originalName: req.file.originalname, size: req.file.size, width: meta.width, height: meta.height, format: meta.format });
-  } catch (err) { res.json({ id: uuidv4(), filename: req.file.filename, url: `/api/files/${req.file.filename}`, originalName: req.file.originalname, size: req.file.size }); }
+    res.json({ 
+      id: fileId, 
+      filename: req.file.filename, 
+      url: `/api/files/${req.file.filename}`, 
+      originalName: req.file.originalname, 
+      size: req.file.size, 
+      width: meta.width, 
+      height: meta.height, 
+      format: meta.format 
+    });
+  } catch (err) { 
+    // Fallback for RAW/BMP: Return the correct ID so /api/process can find it later
+    res.json({ 
+      id: fileId, 
+      filename: req.file.filename, 
+      url: `/api/files/${req.file.filename}`, 
+      originalName: req.file.originalname, 
+      size: req.file.size 
+    }); 
+  }
 });
 
 app.use('/api/files', express.static(UPLOAD_DIR));
@@ -63,12 +88,49 @@ app.use('/api/processed', express.static(PROCESSED_DIR));
 
 app.post('/api/process', async (req, res) => {
   const { id, options } = req.body;
-  const fileName = fs.readdirSync(UPLOAD_DIR).find(f => f.startsWith(id));
-  if (!fileName) return res.status(404).json({ error: 'File not found' });
-  const outFilename = `processed_${uuidv4()}.${options.format === 'original' ? 'jpg' : options.format}`;
-  const outputPath = path.join(PROCESSED_DIR, outFilename);
+  
   try {
-    let p = sharp(path.join(UPLOAD_DIR, fileName));
+    // Locate file
+    const files = fs.readdirSync(UPLOAD_DIR);
+    const fileName = files.find(f => f.startsWith(id));
+    if (!fileName) return res.status(404).json({ error: 'File not found' });
+
+    const outFilename = `processed_${uuidv4()}.${options.format === 'original' ? 'jpg' : options.format}`;
+    const outputPath = path.join(PROCESSED_DIR, outFilename);
+    const filePath = path.join(UPLOAD_DIR, fileName);
+
+    let p;
+
+    // --- Restore Input Logic (RAW & BMP) ---
+    if (options.rawWidth && options.rawHeight) {
+      // 1. RAW Input
+      const isFourChannel = ['rgba', 'bgra', 'uyvy'].includes(options.rawPixelFormat || '');
+      p = sharp(filePath, {
+        raw: {
+          width: options.rawWidth,
+          height: options.rawHeight,
+          channels: isFourChannel ? 4 : 3
+        }
+      });
+    } else if (fileName.toLowerCase().endsWith('.bmp')) {
+      // 2. BMP Input (using bmp-js fallback)
+      try {
+        p = sharp(filePath);
+        await p.metadata(); // Check if native sharp supports it
+      } catch (e) {
+        // Use bmp-js to decode if native fails
+        const buffer = fs.readFileSync(filePath);
+        const bmpData = bmp.decode(buffer);
+        p = sharp(bmpData.data, {
+          raw: { width: bmpData.width, height: bmpData.height, channels: 4 }
+        });
+      }
+    } else {
+      // 3. Standard Input
+      p = sharp(filePath);
+    }
+
+    // --- Processing Pipeline ---
     if (options.rotate) p = p.rotate(options.rotate);
     if (options.flipX) p = p.flop();
     if (options.flipY) p = p.flip();
@@ -76,11 +138,21 @@ app.post('/api/process', async (req, res) => {
     if (options.blur) p = p.blur(options.blur);
     if (options.sharpen) p = p.sharpen();
     if (options.width || options.height) p = p.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
-    if (options.format === 'png') p = p.png(); else if (options.format === 'webp') p = p.webp({ quality: options.quality }); else p = p.jpeg({ quality: options.quality });
+    
+    // Output Format
+    if (options.format === 'png') p = p.png(); 
+    else if (options.format === 'webp') p = p.webp({ quality: options.quality }); 
+    else if (options.format === 'bmp') p = p.toFormat('bmp'); 
+    else p = p.jpeg({ quality: options.quality });
+
     await p.toFile(outputPath);
     incrementStats();
     res.json({ url: `/api/processed/${outFilename}`, filename: outFilename, size: fs.statSync(outputPath).size });
-  } catch (err) { res.status(500).json({ error: 'Fail' }); }
+
+  } catch (err) { 
+    console.error("Process Error:", err);
+    res.status(500).json({ error: 'Processing failed: ' + err.message }); 
+  }
 });
 
 function getSecId(ticker) {
@@ -140,7 +212,7 @@ async function fetchHistoricalKLines(ticker, limit = 180) {
         low: parseFloat(low),
         volume: parseFloat(vol)
       };
-    }).filter(k => new Date(k.date) <= today); // Filter out potential future date placeholders
+    }).filter(k => new Date(k.date) <= today); 
   } catch (e) { return []; }
 }
 
