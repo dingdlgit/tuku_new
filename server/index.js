@@ -7,6 +7,7 @@ import fs from 'fs';
 import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
+import bmp from 'bmp-js';
 import { GoogleGenAI } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,12 +54,11 @@ app.get('/api/stats', (req, res) => {
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   
-  // FIX: Derive ID consistently from the saved filename.
-  // Previously, the catch block generated a NEW uuid, causing a mismatch between 
-  // the ID sent to client and the actual file on disk.
+  // Consistently use filename as ID to avoid lookup failures
   const fileId = path.basename(req.file.filename, path.extname(req.file.filename));
 
   try {
+    // Try to read metadata to confirm it's a standard image
     const meta = await sharp(req.file.path).metadata();
     res.json({ 
       id: fileId, 
@@ -71,7 +71,8 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       format: meta.format 
     });
   } catch (err) { 
-    // Fallback for non-image files (RAW, binary, etc.) that Sharp cannot probe
+    // Fallback for RAW/BMP or unrecognized formats
+    // We return success so the frontend can let the user manually configure RAW params
     res.json({ 
       id: fileId, 
       filename: req.file.filename, 
@@ -88,7 +89,6 @@ app.use('/api/processed', express.static(PROCESSED_DIR));
 app.post('/api/process', async (req, res) => {
   const { id, options } = req.body;
   
-  // Optimization: Use async readdir to avoid blocking the event loop
   try {
     const files = await fs.promises.readdir(UPLOAD_DIR);
     const fileName = files.find(f => f.startsWith(id));
@@ -97,20 +97,73 @@ app.post('/api/process', async (req, res) => {
     
     const outFilename = `processed_${uuidv4()}.${options.format === 'original' ? 'jpg' : options.format}`;
     const outputPath = path.join(PROCESSED_DIR, outFilename);
+    const filePath = path.join(UPLOAD_DIR, fileName);
 
-    let p = sharp(path.join(UPLOAD_DIR, fileName));
-    if (options.rotate) p = p.rotate(options.rotate);
-    if (options.flipX) p = p.flop();
-    if (options.flipY) p = p.flip();
-    if (options.grayscale) p = p.grayscale();
-    if (options.blur) p = p.blur(options.blur);
-    if (options.sharpen) p = p.sharpen();
-    if (options.width || options.height) p = p.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
-    if (options.format === 'png') p = p.png(); else if (options.format === 'webp') p = p.webp({ quality: options.quality }); else p = p.jpeg({ quality: options.quality });
+    let pipeline;
+
+    // --- 1. INPUT STRATEGY ---
     
-    await p.toFile(outputPath);
+    // Strategy A: Explicit RAW parameters provided (e.g. UYVY, RGB Raw Data)
+    if (options.rawWidth && options.rawHeight) {
+      const isFourChannel = ['rgba', 'bgra', 'uyvy'].includes(options.rawPixelFormat || '');
+      pipeline = sharp(filePath, {
+        raw: {
+          width: options.rawWidth,
+          height: options.rawHeight,
+          channels: isFourChannel ? 4 : 3
+        }
+      });
+    }
+    // Strategy B: BMP file handling (Sharp native or bmp-js fallback)
+    else if (fileName.toLowerCase().endsWith('.bmp')) {
+       try {
+         // Try native Sharp loading first
+         pipeline = sharp(filePath);
+         await pipeline.metadata(); 
+       } catch (e) {
+         // Fallback: Decode using bmp-js, then feed raw buffer to Sharp
+         try {
+            const buffer = fs.readFileSync(filePath);
+            const bmpData = bmp.decode(buffer);
+            pipeline = sharp(bmpData.data, {
+              raw: {
+                width: bmpData.width,
+                height: bmpData.height,
+                channels: 4 // bmp-js typically returns ABGR/RGBA 4-channel data
+              }
+            });
+         } catch (bmpErr) {
+            throw new Error("BMP Decode Failed: " + bmpErr.message);
+         }
+       }
+    }
+    // Strategy C: Standard Image (JPG, PNG, WEBP, etc.)
+    else {
+      pipeline = sharp(filePath);
+    }
+
+    // --- 2. TRANSFORMATIONS ---
+    if (options.rotate) pipeline = pipeline.rotate(options.rotate);
+    if (options.flipX) pipeline = pipeline.flop();
+    if (options.flipY) pipeline = pipeline.flip();
+    if (options.grayscale) pipeline = pipeline.grayscale();
+    if (options.blur) pipeline = pipeline.blur(options.blur);
+    if (options.sharpen) pipeline = pipeline.sharpen();
+    if (options.width || options.height) {
+        pipeline = pipeline.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
+    }
+
+    // --- 3. OUTPUT FORMAT ---
+    if (options.format === 'png') pipeline = pipeline.png(); 
+    else if (options.format === 'webp') pipeline = pipeline.webp({ quality: options.quality }); 
+    else if (options.format === 'bmp') pipeline = pipeline.toFormat('bmp'); // Added BMP output support
+    else pipeline = pipeline.jpeg({ quality: options.quality });
+    
+    await pipeline.toFile(outputPath);
     incrementStats();
+    
     res.json({ url: `/api/processed/${outFilename}`, filename: outFilename, size: fs.statSync(outputPath).size });
+
   } catch (err) { 
     console.error("Process error:", err);
     res.status(500).json({ error: 'Processing failed', details: err.message }); 
