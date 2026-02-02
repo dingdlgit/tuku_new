@@ -54,8 +54,7 @@ app.get('/api/stats', (req, res) => {
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   
-  // FIX 1: Generate ID based on the ACTUAL saved filename immediately.
-  // This prevents the "File not found" error where the catch block previously returned a mismatched random UUID.
+  // FIX: Generate ID based on the ACTUAL saved filename immediately.
   const fileId = path.basename(req.file.filename, path.extname(req.file.filename));
 
   try {
@@ -72,8 +71,7 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       format: meta.format 
     });
   } catch (err) { 
-    // FIX 2: Fallback for BMPs that sharp fails to read.
-    // We use bmp-js to parse the header so the frontend gets the correct dimensions.
+    // Fallback for BMPs that sharp fails to read.
     let fallbackMeta = {};
     if (req.file.originalname.toLowerCase().endsWith('.bmp')) {
        try {
@@ -109,7 +107,24 @@ app.post('/api/process', async (req, res) => {
   
   if (!fileName) return res.status(404).json({ error: 'File not found' });
   
-  const outFilename = `processed_${uuidv4()}.${options.format === 'original' ? 'jpg' : options.format}`;
+  // --- Determine Output Format ---
+  // Fix: Logic to preserve 'original' format properly, especially for BMP
+  const originalExt = path.extname(fileName).toLowerCase().replace('.', '');
+  let targetFormat = options.format;
+  
+  if (targetFormat === 'original') {
+    // If original, we try to keep the extension. 
+    // If it was BMP, target is BMP. If it was PNG, target is PNG.
+    if (['bmp', 'png', 'webp', 'gif', 'avif', 'tiff'].includes(originalExt)) {
+      targetFormat = originalExt;
+    } else {
+      targetFormat = 'jpeg'; // Default fallback
+    }
+  }
+
+  // Map 'jpeg' to 'jpg' for filename consistency
+  const outExt = targetFormat === 'jpeg' ? 'jpg' : targetFormat;
+  const outFilename = `processed_${uuidv4()}.${outExt}`;
   const outputPath = path.join(PROCESSED_DIR, outFilename);
   const filePath = path.join(UPLOAD_DIR, fileName);
 
@@ -136,11 +151,26 @@ app.post('/api/process', async (req, res) => {
         // Native failed, use bmp-js
         const buffer = fs.readFileSync(filePath);
         const bmpData = bmp.decode(buffer);
-        p = sharp(bmpData.data, {
+        
+        // CRITICAL FIX: bmp-js decodes into ABGR (Alpha, Blue, Green, Red).
+        // Sharp expects RGBA (Red, Green, Blue, Alpha).
+        // We must manually swap the channels to prevent dark/black/inverted color images.
+        const abgr = bmpData.data;
+        const rgba = Buffer.alloc(abgr.length);
+        
+        for (let i = 0; i < abgr.length; i += 4) {
+          // bmp-js: [A, B, G, R]
+          rgba[i]     = abgr[i + 3]; // R
+          rgba[i + 1] = abgr[i + 2]; // G
+          rgba[i + 2] = abgr[i + 1]; // B
+          rgba[i + 3] = abgr[i];     // A
+        }
+
+        p = sharp(rgba, {
           raw: {
             width: bmpData.width,
             height: bmpData.height,
-            channels: 4 // bmp-js returns rgba/abgr
+            channels: 4
           }
         });
       }
@@ -159,9 +189,9 @@ app.post('/api/process', async (req, res) => {
     if (options.width || options.height) p = p.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
     
     // --- Output Format ---
-    if (options.format === 'png') p = p.png(); 
-    else if (options.format === 'webp') p = p.webp({ quality: options.quality }); 
-    else if (options.format === 'bmp') p = p.toFormat('bmp');
+    if (targetFormat === 'png') p = p.png(); 
+    else if (targetFormat === 'webp') p = p.webp({ quality: options.quality }); 
+    else if (targetFormat === 'bmp') p = p.toFormat('bmp');
     else p = p.jpeg({ quality: options.quality });
 
     await p.toFile(outputPath);
