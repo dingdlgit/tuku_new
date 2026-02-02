@@ -220,17 +220,11 @@ app.post('/api/ai-process', async (req, res) => {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   try {
-    // 1. Read file and prepare base64
-    // Note: Sharp/bmp-js logic above might be needed if we want to support sending fixed BMPs to AI,
-    // but for simplicity, we send the file as-is or convert to PNG if raw.
-    // For now, assuming the input file is supported by Gemini (JPEG, PNG, WEBP).
-    // If it's a RAW/BMP that gemini doesn't support, frontend should probably convert it first via standard process.
     const fileBuffer = fs.readFileSync(filePath);
-    const mimeType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg'; // Simplification
+    const mimeType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg'; 
     const base64Data = fileBuffer.toString('base64');
 
     if (task === 'vision') {
-      // --- VISION (Describe) ---
       const model = 'gemini-2.5-flash-image';
       const response = await ai.models.generateContent({
         model: model,
@@ -245,7 +239,6 @@ app.post('/api/ai-process', async (req, res) => {
       return res.json({ aiText: response.text });
 
     } else if (task === 'generate-image') {
-      // --- IMAGE GENERATION (Edit/Create) ---
       const model = 'gemini-2.5-flash-image';
       const response = await ai.models.generateContent({
         model: model,
@@ -257,7 +250,6 @@ app.post('/api/ai-process', async (req, res) => {
         }
       });
 
-      // Extract image from response
       let outBase64 = null;
       if (response.candidates && response.candidates[0].content && response.candidates[0].content.parts) {
           for (const part of response.candidates[0].content.parts) {
@@ -277,14 +269,13 @@ app.post('/api/ai-process', async (req, res) => {
             url: `/api/processed/${outFilename}`, 
             filename: outFilename, 
             mimeType: 'image/png',
-            aiText: response.text // Optional text explanation
+            aiText: response.text 
           });
       } else {
          return res.status(500).json({ error: "AI did not return an image. It might have refused the request." });
       }
 
     } else if (task === 'generate-video') {
-      // --- VIDEO GENERATION (Veo) ---
       const model = 'veo-3.1-fast-generate-preview';
       
       let operation = await ai.models.generateVideos({
@@ -297,11 +288,10 @@ app.post('/api/ai-process', async (req, res) => {
         config: {
             numberOfVideos: 1,
             resolution: '720p',
-            aspectRatio: '16:9' // Veo default
+            aspectRatio: '16:9' 
         }
       });
 
-      // Polling loop
       while (!operation.done) {
         await new Promise(resolve => setTimeout(resolve, 5000));
         operation = await ai.operations.getVideosOperation({operation: operation});
@@ -309,7 +299,6 @@ app.post('/api/ai-process', async (req, res) => {
 
       const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
       if (downloadLink) {
-         // Fetch the video content using the API Key
          const vidRes = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
          if (!vidRes.ok) throw new Error("Failed to download generated video");
          
@@ -333,7 +322,22 @@ app.post('/api/ai-process', async (req, res) => {
 
   } catch (err) {
     console.error("AI Processing Error", err);
-    res.status(500).json({ error: 'AI Error: ' + (err.message || err.toString()) });
+    
+    // Check for Google GenAI specific 429/Quota errors
+    // The error message from SDK often contains the status code or JSON string
+    const errStr = err.toString();
+    const isRateLimit = err.status === 429 || 
+                        errStr.includes('429') || 
+                        errStr.includes('quota') || 
+                        errStr.includes('RESOURCE_EXHAUSTED');
+
+    if (isRateLimit) {
+        return res.status(429).json({ 
+            error: "Google AI Quota Exceeded (429). Please wait a moment and try again, or check your API key billing plan." 
+        });
+    }
+
+    res.status(500).json({ error: 'AI Error: ' + (err.message || "Internal Server Error") });
   }
 });
 

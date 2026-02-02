@@ -42,6 +42,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [options, setOptions] = useState<ProcessOptions>(defaultOptions);
   const [result, setResult] = useState<ProcessResponse | null>(null);
+  const [error, setError] = useState<string | null>(null); // New Error State
   const [totalProcessed, setTotalProcessed] = useState(0);
 
   const t = {
@@ -67,7 +68,8 @@ function App() {
       enterPwd: "ENTER ACCESS CODE",
       unlock: "UNLOCK",
       accessDenied: "ACCESS DENIED: MODULE UNDER CONSTRUCTION",
-      aiResult: "NEURAL ANALYSIS"
+      aiResult: "NEURAL ANALYSIS",
+      error: "SYSTEM ALERT"
     },
     zh: {
       appTitle: "图酷酷",
@@ -91,7 +93,8 @@ function App() {
       enterPwd: "输入访问密钥",
       unlock: "解锁",
       accessDenied: "访问拒绝：功能正在新增中",
-      aiResult: "神经分析结果"
+      aiResult: "神经分析结果",
+      error: "系统警报"
     }
   }[lang];
 
@@ -123,6 +126,7 @@ function App() {
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
     setResult(null);
+    setError(null);
     const formData = new FormData();
     formData.append('image', file);
 
@@ -170,6 +174,7 @@ function App() {
     if (!currentFile) return;
 
     setIsProcessing(true);
+    setError(null);
     try {
       const response = await fetch('/api/process', {
         method: 'POST',
@@ -218,7 +223,8 @@ function App() {
   const handleAIProcess = async () => {
     if (!currentFile) return;
     setIsProcessing(true);
-    setResult(null); // Clear previous result to show loading
+    setResult(null); 
+    setError(null);
 
     try {
       const response = await fetch('/api/ai-process', {
@@ -242,7 +248,7 @@ function App() {
 
     } catch (error: any) {
       console.error(error);
-      alert(error.message);
+      setError(error.message); // Set UI error state instead of alert
     } finally {
       setIsProcessing(false);
     }
@@ -259,6 +265,7 @@ function App() {
   const handleReset = () => {
     setCurrentFile(null);
     setResult(null);
+    setError(null);
     setOptions(defaultOptions);
   };
 
@@ -394,7 +401,16 @@ function App() {
                            <div className="absolute inset-0 z-30 pointer-events-none"><div className="scanner-overlay"></div><div className="scanner-line"></div></div>
                         )}
 
-                        {result ? (
+                        {error && (
+                            <div className="absolute inset-0 z-50 flex items-center justify-center p-8 bg-black/80 backdrop-blur-md">
+                                <div className="border border-rose-500 bg-rose-950/30 p-8 max-w-lg text-center shadow-[0_0_30px_rgba(244,63,94,0.3)]">
+                                    <h3 className="text-xl font-tech text-rose-500 uppercase tracking-widest mb-4 animate-pulse">{t.error}</h3>
+                                    <p className="text-white font-code text-sm leading-relaxed">{error}</p>
+                                </div>
+                            </div>
+                        )}
+
+                        {result && !error ? (
                            <div className="flex flex-col items-center relative w-full h-full justify-center">
                               {/* --- AI TEXT RESULT --- */}
                               {result.aiText && (
@@ -429,7 +445,7 @@ function App() {
                                   </div>
                               </div>
                            </div>
-                        ) : (
+                        ) : !error && (
                           <div className="relative w-full h-full flex items-center justify-center">
                              {isRawFormat(currentFile.filename) ? (
                                 <div className="flex flex-col items-center justify-center p-8 border border-slate-700 bg-slate-900/80 backdrop-blur-sm relative z-20">
@@ -457,7 +473,7 @@ function App() {
                       </div>
                     </div>
 
-                    {result && (
+                    {result && !error && (
                       <div className="bg-slate-900/80 border-t border-b border-cyan-900/50 p-4 flex items-center justify-between relative backdrop-blur-md">
                          <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
                          
