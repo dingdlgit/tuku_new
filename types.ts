@@ -14,6 +14,8 @@ export type RawPixelFormat = 'uyvy' | 'nv21' | 'rgba' | 'bgra' | 'rgb' | 'bgr';
 
 export type WatermarkPosition = 'top-left' | 'top-right' | 'center' | 'bottom-left' | 'bottom-right';
 
+export type AITaskType = 'vision' | 'generate-image' | 'generate-video';
+
 export interface ProcessOptions {
   format: ImageFormat;
   quality: number;
@@ -32,6 +34,9 @@ export interface ProcessOptions {
   rawWidth?: number;
   rawHeight?: number;
   rawPixelFormat?: RawPixelFormat;
+  // AI Options
+  aiTask: AITaskType;
+  aiPrompt: string;
 }
 
 export interface UploadResponse {
@@ -47,9 +52,12 @@ export interface UploadResponse {
 }
 
 export interface ProcessResponse {
-  url: string;
-  filename: string;
-  size: number;
+  url?: string;
+  filename?: string;
+  size?: number;
+  // AI Specific
+  aiText?: string;
+  mimeType?: string; // video/mp4, image/png
 }
 
 // --- Enhanced Stock Analysis Types ---

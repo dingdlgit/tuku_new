@@ -1,21 +1,23 @@
 
 import React from 'react';
-import { ImageFormat, ProcessOptions, Language, RawPixelFormat, WatermarkPosition } from '../types';
+import { ImageFormat, ProcessOptions, Language, RawPixelFormat, WatermarkPosition, AITaskType } from '../types';
 
 interface ControlsProps {
   options: ProcessOptions;
   setOptions: React.Dispatch<React.SetStateAction<ProcessOptions>>;
   onProcess: () => void;
+  onAIProcess: () => void; // New Handler
   isProcessing: boolean;
   originalDimensions?: { width: number; height: number };
   lang: Language;
-  inputFormat?: string; // Passed from parent to detect if raw inputs are needed
+  inputFormat?: string; 
 }
 
 export const Controls: React.FC<ControlsProps> = ({ 
   options, 
   setOptions, 
   onProcess, 
+  onAIProcess,
   isProcessing,
   originalDimensions,
   lang,
@@ -24,6 +26,13 @@ export const Controls: React.FC<ControlsProps> = ({
   
   const t = {
     en: {
+      aiHeader: "NEURAL ENGINE",
+      aiPrompt: "PROMPT / INSTRUCTION",
+      aiTask: "AI TASK MODEL",
+      taskVision: "VISION (DESCRIBE)",
+      taskImgGen: "IMAGE GEN (EDIT)",
+      taskVideo: "VIDEO GEN (VEO)",
+      aiBtn: "ACTIVATE NEURAL NET",
       settings: "SYSTEM_CONFIG",
       sourceSettings: "RAW_DATA_INPUT",
       sourceDesc: "Required: Specify format & dimensions.",
@@ -44,7 +53,7 @@ export const Controls: React.FC<ControlsProps> = ({
       posC: "Center",
       posBL: "Bottom Left",
       posBR: "Bottom Right",
-      processBtn: "EXECUTE_PROCESS",
+      processBtn: "EXECUTE PROCESS",
       processing: "PROCESSING...",
       rotBtn: "ROT +90°",
       flipH: "FLIP H",
@@ -53,6 +62,13 @@ export const Controls: React.FC<ControlsProps> = ({
       heightLabel: "H"
     },
     zh: {
+      aiHeader: "神经引擎 (AI)",
+      aiPrompt: "提示词 / 指令",
+      aiTask: "AI 任务模型",
+      taskVision: "视觉理解 (描述场景)",
+      taskImgGen: "图像生成 (AI修图)",
+      taskVideo: "视频生成 (Veo)",
+      aiBtn: "激活神经网络",
       settings: "系统配置",
       sourceSettings: "RAW 数据源",
       sourceDesc: "必填：指定格式与尺寸",
@@ -87,15 +103,11 @@ export const Controls: React.FC<ControlsProps> = ({
     setOptions(prev => ({ ...prev, [key]: value }));
   };
 
-  // Helper to handle dimension changes with aspect ratio locking
   const handleDimensionChange = (dimension: 'width' | 'height', value: string) => {
     const numValue = value ? Number(value) : null;
     
     setOptions(prev => {
       const next = { ...prev, [dimension]: numValue };
-
-      // Auto-calculate the other dimension if aspect ratio is locked and we have original dims
-      // Note: originalDimensions.width > 0 check ensures we don't divide by zero or use invalid metadata
       if (
         prev.maintainAspectRatio && 
         originalDimensions && 
@@ -104,7 +116,6 @@ export const Controls: React.FC<ControlsProps> = ({
         numValue !== null
       ) {
         const ratio = originalDimensions.width / originalDimensions.height;
-        
         if (dimension === 'width') {
           next.height = Math.round(numValue / ratio);
         } else {
@@ -115,11 +126,9 @@ export const Controls: React.FC<ControlsProps> = ({
     });
   };
 
-  // Helper to handle toggling the checkbox
   const handleAspectToggle = (checked: boolean) => {
     setOptions(prev => {
       const next = { ...prev, maintainAspectRatio: checked };
-      // If turning ON, and we have a width, sync the height immediately
       if (
         checked && 
         originalDimensions && 
@@ -138,12 +147,10 @@ export const Controls: React.FC<ControlsProps> = ({
       ['.uyvy', '.yuv', '.nv21', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.bin'].some(ext => inputFormat.toLowerCase().endsWith(ext))
   );
 
-  // Calculate rotation count (0, 1, 2, 3)
   const rotateCount = (options.rotate % 360) / 90;
 
   return (
     <div className="bg-slate-900/80 backdrop-blur-md rounded-none border border-cyan-900/50 flex flex-col h-full overflow-hidden relative">
-      {/* Header Accent */}
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-600 to-transparent"></div>
 
       <div className="p-4 border-b border-cyan-900/30 bg-slate-900/50 flex justify-between items-center">
@@ -160,12 +167,56 @@ export const Controls: React.FC<ControlsProps> = ({
 
       <div className="flex-1 overflow-y-auto p-5 space-y-8 custom-scrollbar">
         
-        {/* RAW Format Specific Settings */}
+        {/* --- AI SECTION --- */}
+        <section className="bg-purple-900/20 p-4 border-l-2 border-purple-500 relative overflow-hidden group">
+             <div className="absolute inset-0 bg-purple-500/5 group-hover:bg-purple-500/10 transition-colors pointer-events-none"></div>
+             <label className="block text-xs font-bold text-purple-400 mb-3 font-tech tracking-wider uppercase flex items-center gap-2">
+                <svg className="w-4 h-4 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                {t.aiHeader}
+             </label>
+             
+             <div className="mb-4">
+               <label className="block text-[10px] text-slate-400 mb-1 font-code">{t.aiTask}</label>
+               <select
+                 value={options.aiTask || 'vision'}
+                 onChange={(e) => updateOption('aiTask', e.target.value as AITaskType)}
+                 className="w-full bg-black/40 border border-purple-500/30 text-purple-100 text-xs py-2 px-3 focus:outline-none focus:border-purple-500 font-code uppercase"
+               >
+                 <option value="vision">{t.taskVision}</option>
+                 <option value="generate-image">{t.taskImgGen}</option>
+                 <option value="generate-video">{t.taskVideo}</option>
+               </select>
+             </div>
+
+             <div className="mb-4">
+                <label className="block text-[10px] text-slate-400 mb-1 font-code">{t.aiPrompt}</label>
+                <textarea 
+                  rows={3}
+                  value={options.aiPrompt}
+                  onChange={(e) => updateOption('aiPrompt', e.target.value)}
+                  placeholder="e.g. Describe this image..."
+                  className="w-full bg-black/40 border border-purple-500/30 text-white text-xs py-2 px-3 focus:outline-none focus:border-purple-500 font-code rounded-sm"
+                />
+             </div>
+
+             <button
+               onClick={onAIProcess}
+               disabled={isProcessing}
+               className={`w-full py-2 px-3 font-tech font-bold uppercase tracking-wider text-[10px] clip-button transition-all relative overflow-hidden
+                 ${isProcessing 
+                   ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
+                   : 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]'
+                 }
+               `}
+             >
+               {isProcessing ? t.processing : t.aiBtn}
+             </button>
+        </section>
+
         {isRaw && (
           <section className="bg-amber-900/20 p-4 border-l-2 border-amber-500">
              <label className="block text-xs font-bold text-amber-500 mb-1 font-tech tracking-wider">{t.sourceSettings}</label>
              <p className="text-[10px] text-amber-400/70 mb-4 font-code">{t.sourceDesc}</p>
-             
              <div className="mb-4">
                <label className="block text-[10px] font-semibold text-slate-400 mb-1 font-code">{t.pixelFormat}</label>
                <select
@@ -181,49 +232,25 @@ export const Controls: React.FC<ControlsProps> = ({
                  <option value="bgr">BGR (24-bit)</option>
                </select>
              </div>
-
              <div className="flex gap-2 items-center">
                 <div className="relative w-full">
-                  <input
-                    type="number"
-                    placeholder="W"
-                    value={options.rawWidth || ''}
-                    onChange={(e) => updateOption('rawWidth', e.target.value ? Number(e.target.value) : undefined)}
-                    className="w-full bg-black/40 border border-amber-500/30 text-amber-100 text-xs py-2 px-3 pl-3 pr-8 focus:outline-none focus:border-amber-500 font-code"
-                  />
+                  <input type="number" placeholder="W" value={options.rawWidth || ''} onChange={(e) => updateOption('rawWidth', e.target.value ? Number(e.target.value) : undefined)} className="w-full bg-black/40 border border-amber-500/30 text-amber-100 text-xs py-2 px-3 pl-3 pr-8 focus:outline-none focus:border-amber-500 font-code" />
                   <span className="absolute right-3 top-2 text-[10px] text-slate-500">px</span>
                 </div>
                 <span className="text-slate-600">×</span>
                 <div className="relative w-full">
-                  <input
-                    type="number"
-                    placeholder="H"
-                    value={options.rawHeight || ''}
-                    onChange={(e) => updateOption('rawHeight', e.target.value ? Number(e.target.value) : undefined)}
-                    className="w-full bg-black/40 border border-amber-500/30 text-amber-100 text-xs py-2 px-3 pl-3 pr-8 focus:outline-none focus:border-amber-500 font-code"
-                  />
+                  <input type="number" placeholder="H" value={options.rawHeight || ''} onChange={(e) => updateOption('rawHeight', e.target.value ? Number(e.target.value) : undefined)} className="w-full bg-black/40 border border-amber-500/30 text-amber-100 text-xs py-2 px-3 pl-3 pr-8 focus:outline-none focus:border-amber-500 font-code" />
                   <span className="absolute right-3 top-2 text-[10px] text-slate-500">px</span>
                 </div>
               </div>
           </section>
         )}
 
-        {/* Format */}
         <section>
           <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.format}</label>
           <div className="grid grid-cols-3 gap-2">
             {[ImageFormat.ORIGINAL, ImageFormat.JPEG, ImageFormat.PNG, ImageFormat.WEBP, ImageFormat.BMP].map(fmt => (
-              <button
-                key={fmt}
-                onClick={() => updateOption('format', fmt)}
-                className={`px-2 py-2 text-[10px] border font-code uppercase transition-all
-                  ${options.format === fmt 
-                    ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.2)]' 
-                    : 'bg-transparent border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'
-                  }`}
-              >
-                {fmt === 'original' ? 'ORIG' : fmt}
-              </button>
+              <button key={fmt} onClick={() => updateOption('format', fmt)} className={`px-2 py-2 text-[10px] border font-code uppercase transition-all ${options.format === fmt ? 'bg-cyan-500/20 border-cyan-400 text-cyan-300 shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'bg-transparent border-slate-700 text-slate-500 hover:border-slate-500 hover:text-slate-300'}`}>{fmt === 'original' ? 'ORIG' : fmt}</button>
             ))}
           </div>
         </section>
@@ -234,149 +261,69 @@ export const Controls: React.FC<ControlsProps> = ({
               <label className="text-xs font-bold text-cyan-500 font-tech tracking-wider uppercase">{t.quality}</label>
               <span className="text-xs font-code text-cyan-300">{options.quality}%</span>
             </div>
-            <input
-              type="range"
-              min="10"
-              max="100"
-              value={options.quality}
-              onChange={(e) => updateOption('quality', Number(e.target.value))}
-              className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-            />
+            <input type="range" min="10" max="100" value={options.quality} onChange={(e) => updateOption('quality', Number(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
           </section>
         )}
 
-        {/* Dimensions */}
         <section>
           <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.resize}</label>
           <div className="flex gap-2 items-center mb-3">
             <div className="relative w-full">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">{t.widthLabel}</span>
-              <input
-                type="number"
-                placeholder={originalDimensions?.width ? originalDimensions.width.toString() : ''}
-                value={options.width || ''}
-                onChange={(e) => handleDimensionChange('width', e.target.value)}
-                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 pl-8 pr-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-700"
-              />
+              <input type="number" placeholder={originalDimensions?.width ? originalDimensions.width.toString() : ''} value={options.width || ''} onChange={(e) => handleDimensionChange('width', e.target.value)} className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 pl-8 pr-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-700" />
             </div>
             <span className="text-slate-600 text-xs">×</span>
             <div className="relative w-full">
               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] text-slate-500 font-bold">{t.heightLabel}</span>
-              <input
-                type="number"
-                placeholder={originalDimensions?.height ? originalDimensions.height.toString() : ''}
-                value={options.height || ''}
-                onChange={(e) => handleDimensionChange('height', e.target.value)}
-                className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 pl-8 pr-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-700"
-              />
+              <input type="number" placeholder={originalDimensions?.height ? originalDimensions.height.toString() : ''} value={options.height || ''} onChange={(e) => handleDimensionChange('height', e.target.value)} className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 pl-8 pr-3 focus:outline-none focus:border-cyan-500 font-code placeholder-slate-700" />
             </div>
           </div>
           <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="aspect"
-              checked={options.maintainAspectRatio}
-              onChange={(e) => handleAspectToggle(e.target.checked)}
-              className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0"
-            />
+            <input type="checkbox" id="aspect" checked={options.maintainAspectRatio} onChange={(e) => handleAspectToggle(e.target.checked)} className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0" />
             <label htmlFor="aspect" className="ml-2 text-xs text-slate-400 font-code">{t.maintainAspect}</label>
           </div>
         </section>
 
-        {/* Adjustments */}
         <section>
           <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.transform}</label>
-          
-          {/* Rotate Button */}
           <div className="mb-2">
-             <button 
-               onClick={() => updateOption('rotate', (options.rotate + 90) % 360)}
-               className={`w-full py-1.5 border font-code text-[10px] transition-all relative overflow-hidden group
-                 ${rotateCount > 0 
-                   ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]' 
-                   : 'bg-black/20 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'
-                 }`}
-             >
-               <span className="relative z-10 flex items-center justify-center gap-2">
-                 {t.rotBtn}
-                 {rotateCount > 0 && (
-                   <span className="bg-cyan-500 text-black px-1.5 py-0.5 rounded-sm font-bold text-[9px] shadow-sm">
-                     x{rotateCount}
-                   </span>
-                 )}
-               </span>
-               {/* Animated Background for active state */}
+             <button onClick={() => updateOption('rotate', (options.rotate + 90) % 360)} className={`w-full py-1.5 border font-code text-[10px] transition-all relative overflow-hidden group ${rotateCount > 0 ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.2)]' : 'bg-black/20 border-slate-700 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}>
+               <span className="relative z-10 flex items-center justify-center gap-2">{t.rotBtn} {rotateCount > 0 && (<span className="bg-cyan-500 text-black px-1.5 py-0.5 rounded-sm font-bold text-[9px] shadow-sm">x{rotateCount}</span>)}</span>
                {rotateCount > 0 && <div className="absolute inset-0 bg-cyan-400/5 animate-pulse z-0"></div>}
              </button>
           </div>
-
-          {/* Flip Buttons */}
           <div className="flex gap-2">
-            <button 
-              onClick={() => updateOption('flipX', !options.flipX)}
-              className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipX ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}
-            >
-              {t.flipH}
-            </button>
-            <button 
-              onClick={() => updateOption('flipY', !options.flipY)}
-              className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipY ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}
-            >
-              {t.flipV}
-            </button>
+            <button onClick={() => updateOption('flipX', !options.flipX)} className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipX ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}>{t.flipH}</button>
+            <button onClick={() => updateOption('flipY', !options.flipY)} className={`flex-1 py-1.5 border text-[10px] font-code transition-colors ${options.flipY ? 'bg-cyan-900/40 border-cyan-500 text-cyan-400' : 'border-slate-700 bg-black/20 text-slate-400 hover:text-cyan-300 hover:border-cyan-500/50'}`}>{t.flipV}</button>
           </div>
         </section>
 
-        {/* Filters */}
         <section>
            <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.filters}</label>
            <div className="space-y-3">
              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <span className="text-xs text-slate-400 font-code">{t.grayscale}</span>
-                <input 
-                  type="checkbox" 
-                  checked={options.grayscale}
-                  onChange={(e) => updateOption('grayscale', e.target.checked)}
-                  className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0"
-                />
+                <input type="checkbox" checked={options.grayscale} onChange={(e) => updateOption('grayscale', e.target.checked)} className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0" />
              </div>
              <div className="flex items-center justify-between border-b border-slate-800 pb-2">
                 <span className="text-xs text-slate-400 font-code">{t.sharpen}</span>
-                <input 
-                  type="checkbox" 
-                  checked={options.sharpen}
-                  onChange={(e) => updateOption('sharpen', e.target.checked)}
-                  className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0"
-                />
+                <input type="checkbox" checked={options.sharpen} onChange={(e) => updateOption('sharpen', e.target.checked)} className="h-3 w-3 text-cyan-600 bg-black border-slate-600 rounded focus:ring-cyan-500 focus:ring-offset-0" />
              </div>
              <div>
                 <div className="flex justify-between mb-1">
                   <span className="text-xs text-slate-400 font-code">{t.blur}</span>
                   <span className="text-[10px] text-cyan-500 font-code">{options.blur}px</span>
                 </div>
-                <input
-                  type="range"
-                  min="0"
-                  max="20"
-                  step="0.5"
-                  value={options.blur}
-                  onChange={(e) => updateOption('blur', Number(e.target.value))}
-                  className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
-                />
+                <input type="range" min="0" max="20" step="0.5" value={options.blur} onChange={(e) => updateOption('blur', Number(e.target.value))} className="w-full h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" />
              </div>
            </div>
         </section>
 
-        {/* Watermark */}
         <section>
            <label className="block text-xs font-bold text-cyan-500 mb-3 font-tech tracking-wider uppercase">{t.watermark}</label>
            <div className="mb-2">
              <label className="block text-[10px] text-slate-500 mb-1 font-code">{t.watermarkPos}</label>
-             <select 
-               value={options.watermarkPosition || 'bottom-right'}
-               onChange={(e) => updateOption('watermarkPosition', e.target.value as WatermarkPosition)}
-               className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code uppercase"
-             >
+             <select value={options.watermarkPosition || 'bottom-right'} onChange={(e) => updateOption('watermarkPosition', e.target.value as WatermarkPosition)} className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code uppercase">
                <option value="top-left">{t.posTL}</option>
                <option value="top-right">{t.posTR}</option>
                <option value="center">{t.posC}</option>
@@ -384,13 +331,7 @@ export const Controls: React.FC<ControlsProps> = ({
                <option value="bottom-right">{t.posBR}</option>
              </select>
            </div>
-           <textarea
-             rows={2}
-             placeholder=""
-             value={options.watermarkText}
-             onChange={(e) => updateOption('watermarkText', e.target.value)}
-             className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code rounded-sm"
-           />
+           <textarea rows={2} placeholder="" value={options.watermarkText} onChange={(e) => updateOption('watermarkText', e.target.value)} className="w-full bg-black/40 border border-slate-700 text-cyan-100 text-xs py-2 px-3 focus:outline-none focus:border-cyan-500 font-code rounded-sm" />
         </section>
       </div>
 

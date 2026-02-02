@@ -54,11 +54,9 @@ app.get('/api/stats', (req, res) => {
 app.post('/api/upload', upload.single('image'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file' });
   
-  // FIX: Generate ID based on the ACTUAL saved filename immediately.
   const fileId = path.basename(req.file.filename, path.extname(req.file.filename));
 
   try {
-    // Try standard metadata extraction (works for JPG, PNG, some BMPs)
     const meta = await sharp(req.file.path).metadata();
     res.json({ 
       id: fileId, 
@@ -71,7 +69,6 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
       format: meta.format 
     });
   } catch (err) { 
-    // Fallback for BMPs that sharp fails to read.
     let fallbackMeta = {};
     if (req.file.originalname.toLowerCase().endsWith('.bmp')) {
        try {
@@ -83,7 +80,6 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
        }
     }
 
-    // Return the consistent fileId even if metadata failed
     res.json({ 
       id: fileId, 
       filename: req.file.filename, 
@@ -98,16 +94,14 @@ app.post('/api/upload', upload.single('image'), async (req, res) => {
 app.use('/api/files', express.static(UPLOAD_DIR));
 app.use('/api/processed', express.static(PROCESSED_DIR));
 
+// --- STANDARD IMAGE PROCESSING ---
 app.post('/api/process', async (req, res) => {
   const { id, options } = req.body;
-  
-  // Async readdir to prevent blocking
   const files = await fs.promises.readdir(UPLOAD_DIR);
   const fileName = files.find(f => f.startsWith(id));
   
   if (!fileName) return res.status(404).json({ error: 'File not found' });
   
-  // --- Determine Output Format ---
   const originalExt = path.extname(fileName).toLowerCase().replace('.', '');
   let targetFormat = options.format;
   
@@ -115,11 +109,10 @@ app.post('/api/process', async (req, res) => {
     if (['bmp', 'png', 'webp', 'gif', 'avif', 'tiff'].includes(originalExt)) {
       targetFormat = originalExt;
     } else {
-      targetFormat = 'jpeg'; // Default fallback
+      targetFormat = 'jpeg'; 
     }
   }
 
-  // Map 'jpeg' to 'jpg' for filename consistency
   const outExt = targetFormat === 'jpeg' ? 'jpg' : targetFormat;
   const outFilename = `processed_${uuidv4()}.${outExt}`;
   const outputPath = path.join(PROCESSED_DIR, outFilename);
@@ -127,10 +120,7 @@ app.post('/api/process', async (req, res) => {
 
   try {
     let p;
-
-    // --- Input Handling Logic ---
     if (options.rawWidth && options.rawHeight) {
-      // 1. Explicit RAW config
       const isFourChannel = ['rgba', 'bgra', 'uyvy'].includes(options.rawPixelFormat || '');
       p = sharp(filePath, {
         raw: {
@@ -140,37 +130,23 @@ app.post('/api/process', async (req, res) => {
         }
       });
     } else if (fileName.toLowerCase().endsWith('.bmp')) {
-      // 2. BMP Logic
       try {
-        // Try native Sharp first (efficient)
         p = sharp(filePath);
         await p.metadata(); 
       } catch (e) {
-        // Native failed, use bmp-js fallback
         const buffer = fs.readFileSync(filePath);
         const bmpData = bmp.decode(buffer);
-        
-        // bmp-js raw data is ABGR (Alpha, Blue, Green, Red)
-        // Sharp expects RGBA (Red, Green, Blue, Alpha)
         const abgr = bmpData.data;
         const rgba = Buffer.alloc(abgr.length);
         
         for (let i = 0; i < abgr.length; i += 4) {
-          // Input: [Alpha, Blue, Green, Red]
           const alpha = abgr[i];
           const blue = abgr[i + 1];
           const green = abgr[i + 2];
           const red = abgr[i + 3];
-
-          // Output: [Red, Green, Blue, Alpha]
           rgba[i]     = red;
           rgba[i + 1] = green;
           rgba[i + 2] = blue;
-          
-          // CRITICAL FIX:
-          // 24-bit BMPs often have 0 in the Alpha byte after decoding to 32-bit.
-          // Sharp treats Alpha=0 as fully transparent (invisible/black).
-          // We force Alpha to 255 (Opaque) if it's 0 to ensure the image is visible.
           rgba[i + 3] = alpha === 0 ? 255 : alpha; 
         }
 
@@ -183,11 +159,9 @@ app.post('/api/process', async (req, res) => {
         });
       }
     } else {
-      // 3. Standard Logic
       p = sharp(filePath);
     }
 
-    // --- Transformations ---
     if (options.rotate) p = p.rotate(options.rotate);
     if (options.flipX) p = p.flop();
     if (options.flipY) p = p.flip();
@@ -196,48 +170,30 @@ app.post('/api/process', async (req, res) => {
     if (options.sharpen) p = p.sharpen();
     if (options.width || options.height) p = p.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
     
-    // --- Output Processing ---
     if (targetFormat === 'bmp') {
-      // Sharp cannot write BMP directly. We must use bmp-js encode.
-      
-      // 1. Force sRGB and Ensure Alpha channel exists (RGBA)
       p = p.toColorspace('srgb').ensureAlpha();
-      
-      // 2. Get raw buffer from Sharp
       const { data: rgbaBuffer, info } = await p.raw().toBuffer({ resolveWithObject: true });
-      
-      // 3. Convert RGBA (Sharp) back to ABGR (bmp-js)
       const abgrBuffer = Buffer.alloc(rgbaBuffer.length);
       for (let i = 0; i < rgbaBuffer.length; i += 4) {
-        // Sharp: R, G, B, A
         const r = rgbaBuffer[i];
         const g = rgbaBuffer[i+1];
         const b = rgbaBuffer[i+2];
         const a = rgbaBuffer[i+3];
-
-        // BMP: A, B, G, R
         abgrBuffer[i]   = a; 
         abgrBuffer[i+1] = b;
         abgrBuffer[i+2] = g;
         abgrBuffer[i+3] = r;
       }
-
-      // 4. Encode to BMP format
       const bmpData = bmp.encode({
         data: abgrBuffer,
         width: info.width,
         height: info.height
       });
-
-      // 5. Save
       fs.writeFileSync(outputPath, bmpData.data);
-      
     } else {
-      // Standard Sharp Output
       if (targetFormat === 'png') p = p.png(); 
       else if (targetFormat === 'webp') p = p.webp({ quality: options.quality }); 
       else p = p.jpeg({ quality: options.quality });
-
       await p.toFile(outputPath);
     }
 
@@ -250,6 +206,138 @@ app.post('/api/process', async (req, res) => {
   }
 });
 
+// --- AI PROCESSING (VISION / GEN / VEO) ---
+app.post('/api/ai-process', async (req, res) => {
+  if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
+  
+  const { id, task, prompt } = req.body;
+  const files = await fs.promises.readdir(UPLOAD_DIR);
+  const fileName = files.find(f => f.startsWith(id));
+
+  if (!fileName) return res.status(404).json({ error: 'File not found' });
+  const filePath = path.join(UPLOAD_DIR, fileName);
+
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  
+  try {
+    // 1. Read file and prepare base64
+    // Note: Sharp/bmp-js logic above might be needed if we want to support sending fixed BMPs to AI,
+    // but for simplicity, we send the file as-is or convert to PNG if raw.
+    // For now, assuming the input file is supported by Gemini (JPEG, PNG, WEBP).
+    // If it's a RAW/BMP that gemini doesn't support, frontend should probably convert it first via standard process.
+    const fileBuffer = fs.readFileSync(filePath);
+    const mimeType = fileName.endsWith('.png') ? 'image/png' : 'image/jpeg'; // Simplification
+    const base64Data = fileBuffer.toString('base64');
+
+    if (task === 'vision') {
+      // --- VISION (Describe) ---
+      const model = 'gemini-2.5-flash-image';
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: mimeType, data: base64Data } },
+            { text: prompt || "Describe this image in detail." }
+          ]
+        }
+      });
+      incrementStats();
+      return res.json({ aiText: response.text });
+
+    } else if (task === 'generate-image') {
+      // --- IMAGE GENERATION (Edit/Create) ---
+      const model = 'gemini-2.5-flash-image';
+      const response = await ai.models.generateContent({
+        model: model,
+        contents: {
+          parts: [
+            { inlineData: { mimeType: mimeType, data: base64Data } },
+            { text: prompt || "Enhance this image." }
+          ]
+        }
+      });
+
+      // Extract image from response
+      let outBase64 = null;
+      if (response.candidates && response.candidates[0].content && response.candidates[0].content.parts) {
+          for (const part of response.candidates[0].content.parts) {
+              if (part.inlineData) {
+                  outBase64 = part.inlineData.data;
+                  break;
+              }
+          }
+      }
+
+      if (outBase64) {
+          const outFilename = `ai_gen_${uuidv4()}.png`;
+          const outputPath = path.join(PROCESSED_DIR, outFilename);
+          fs.writeFileSync(outputPath, Buffer.from(outBase64, 'base64'));
+          incrementStats();
+          return res.json({ 
+            url: `/api/processed/${outFilename}`, 
+            filename: outFilename, 
+            mimeType: 'image/png',
+            aiText: response.text // Optional text explanation
+          });
+      } else {
+         return res.status(500).json({ error: "AI did not return an image. It might have refused the request." });
+      }
+
+    } else if (task === 'generate-video') {
+      // --- VIDEO GENERATION (Veo) ---
+      const model = 'veo-3.1-fast-generate-preview';
+      
+      let operation = await ai.models.generateVideos({
+        model: model,
+        prompt: prompt || "Animate this image cinematically.",
+        image: {
+          imageBytes: base64Data,
+          mimeType: mimeType
+        },
+        config: {
+            numberOfVideos: 1,
+            resolution: '720p',
+            aspectRatio: '16:9' // Veo default
+        }
+      });
+
+      // Polling loop
+      while (!operation.done) {
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        operation = await ai.operations.getVideosOperation({operation: operation});
+      }
+
+      const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+      if (downloadLink) {
+         // Fetch the video content using the API Key
+         const vidRes = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+         if (!vidRes.ok) throw new Error("Failed to download generated video");
+         
+         const arrayBuffer = await vidRes.arrayBuffer();
+         const outFilename = `ai_video_${uuidv4()}.mp4`;
+         const outputPath = path.join(PROCESSED_DIR, outFilename);
+         fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
+         
+         incrementStats();
+         return res.json({
+             url: `/api/processed/${outFilename}`,
+             filename: outFilename,
+             mimeType: 'video/mp4'
+         });
+      } else {
+         throw new Error("Video generation completed but no URI returned.");
+      }
+    } else {
+      return res.status(400).json({ error: "Invalid task type" });
+    }
+
+  } catch (err) {
+    console.error("AI Processing Error", err);
+    res.status(500).json({ error: 'AI Error: ' + (err.message || err.toString()) });
+  }
+});
+
+// --- STOCK ANALYSIS ---
 function getSecId(ticker) {
   if (/^[6]/.test(ticker)) return `1.${ticker}`; 
   if (/^[03]/.test(ticker)) return `0.${ticker}`; 

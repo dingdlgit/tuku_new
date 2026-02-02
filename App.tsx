@@ -22,7 +22,9 @@ const defaultOptions: ProcessOptions = {
   watermarkPosition: 'bottom-right',
   rawWidth: undefined,
   rawHeight: undefined,
-  rawPixelFormat: 'uyvy' // default
+  rawPixelFormat: 'uyvy',
+  aiTask: 'vision',
+  aiPrompt: ''
 };
 
 type AppMode = 'image' | 'data';
@@ -64,7 +66,8 @@ function App() {
       modeData: "DATA_CORE",
       enterPwd: "ENTER ACCESS CODE",
       unlock: "UNLOCK",
-      accessDenied: "ACCESS DENIED: MODULE UNDER CONSTRUCTION"
+      accessDenied: "ACCESS DENIED: MODULE UNDER CONSTRUCTION",
+      aiResult: "NEURAL ANALYSIS"
     },
     zh: {
       appTitle: "图酷酷",
@@ -87,11 +90,11 @@ function App() {
       modeData: "数据核心",
       enterPwd: "输入访问密钥",
       unlock: "解锁",
-      accessDenied: "访问拒绝：功能正在新增中"
+      accessDenied: "访问拒绝：功能正在新增中",
+      aiResult: "神经分析结果"
     }
   }[lang];
 
-  // Fetch stats on load
   useEffect(() => {
     fetch('/api/stats')
       .then(res => res.json())
@@ -101,7 +104,6 @@ function App() {
       .catch(err => console.error("Failed to load stats", err));
   }, []);
 
-  // Helper to guess pixel format from extension
   const getFormatFromExt = (filename: string): RawPixelFormat => {
       const lower = filename.toLowerCase();
       if (lower.endsWith('.uyvy')) return 'uyvy';
@@ -193,9 +195,13 @@ function App() {
 
       await new Promise((resolve) => {
         const img = new Image();
-        img.src = data.url;
-        img.onload = resolve;
-        img.onerror = resolve; 
+        if (data.url) {
+            img.src = data.url;
+            img.onload = resolve;
+            img.onerror = resolve; 
+        } else {
+            resolve(true);
+        }
       });
 
       setResult(data);
@@ -204,6 +210,39 @@ function App() {
     } catch (error: any) {
       console.error(error);
       alert(error.message || t.processFailed);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAIProcess = async () => {
+    if (!currentFile) return;
+    setIsProcessing(true);
+    setResult(null); // Clear previous result to show loading
+
+    try {
+      const response = await fetch('/api/ai-process', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: currentFile.id,
+          task: options.aiTask,
+          prompt: options.aiPrompt
+        })
+      });
+
+      if (!response.ok) {
+         const errorData = await response.json();
+         throw new Error(errorData.error || t.processFailed);
+      }
+
+      const data: ProcessResponse = await response.json();
+      setResult(data);
+      setTotalProcessed(prev => prev + 1);
+
+    } catch (error: any) {
+      console.error(error);
+      alert(error.message);
     } finally {
       setIsProcessing(false);
     }
@@ -259,7 +298,6 @@ function App() {
 
   return (
     <div className="flex flex-col h-full bg-transparent text-slate-300 font-sans selection:bg-cyan-500/30 selection:text-cyan-100">
-      
       {/* Password Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
@@ -300,29 +338,13 @@ function App() {
             </div>
           </div>
 
-          {/* Core Switcher */}
           <div className="hidden md:flex bg-slate-900 border border-slate-700 p-1 rounded-sm">
-             <button 
-               onClick={() => handleModeSwitch('image')} 
-               className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'image' ? 'bg-cyan-600 text-white shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}
-             >
-               {t.modeImage}
-             </button>
-             <button 
-               onClick={() => handleModeSwitch('data')}
-               className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'data' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}
-             >
-               {t.modeData}
-             </button>
+             <button onClick={() => handleModeSwitch('image')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'image' ? 'bg-cyan-600 text-white shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeImage}</button>
+             <button onClick={() => handleModeSwitch('data')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'data' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeData}</button>
           </div>
 
           <div className="flex items-center gap-6">
-             <button 
-               onClick={toggleLang}
-               className="flex items-center justify-center px-4 py-1.5 text-xs font-code font-bold text-cyan-400 border border-cyan-800 hover:bg-cyan-900/30 hover:border-cyan-500 transition-all uppercase tracking-wider"
-             >
-                [{lang === 'en' ? 'CN' : 'EN'}]
-             </button>
+             <button onClick={toggleLang} className="flex items-center justify-center px-4 py-1.5 text-xs font-code font-bold text-cyan-400 border border-cyan-800 hover:bg-cyan-900/30 hover:border-cyan-500 transition-all uppercase tracking-wider">[{lang === 'en' ? 'CN' : 'EN'}]</button>
           </div>
         </div>
       </header>
@@ -332,32 +354,24 @@ function App() {
         <div className="absolute inset-0 overflow-y-auto custom-scrollbar">
           
           {mode === 'data' ? (
-             // --- DATA PROCESSOR CORE ---
-             <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-80px)]">
-                <StockDashboard lang={lang} />
-             </div>
+             <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-80px)]"><StockDashboard lang={lang} /></div>
           ) : (
-            // --- IMAGE PROCESSOR CORE ---
             <div className="max-w-7xl mx-auto p-6 h-full min-h-[calc(100vh-80px)]">
               {!currentFile ? (
                 <div className="h-full flex flex-col justify-center items-center max-w-3xl mx-auto mt-20 md:mt-0">
                   <div className="w-full text-center mb-12 relative">
-                     <h2 className="text-5xl md:text-6xl font-tech font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500 mb-6 tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-                       {t.sloganTitle}
-                     </h2>
+                     <h2 className="text-5xl md:text-6xl font-tech font-black text-transparent bg-clip-text bg-gradient-to-b from-white to-slate-500 mb-6 tracking-tighter drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">{t.sloganTitle}</h2>
                   </div>
-                  <div className="w-full max-w-xl">
-                      <Dropzone onFileSelect={handleFileUpload} isUploading={isUploading} lang={lang} processedCount={totalProcessed} />
-                  </div>
+                  <div className="w-full max-w-xl"><Dropzone onFileSelect={handleFileUpload} isUploading={isUploading} lang={lang} processedCount={totalProcessed} /></div>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full pb-10">
-                  {/* Left: Controls */}
                   <div className="lg:col-span-4 h-full max-h-[850px]">
                     <Controls 
                       options={options} 
                       setOptions={setOptions} 
                       onProcess={handleProcess}
+                      onAIProcess={handleAIProcess}
                       isProcessing={isProcessing}
                       originalDimensions={{ width: currentFile.width || 0, height: currentFile.height || 0 }}
                       lang={lang}
@@ -365,41 +379,46 @@ function App() {
                     />
                   </div>
 
-                  {/* Right: Preview & Result */}
                   <div className="lg:col-span-8 flex flex-col gap-6">
-                    {/* Preview Area Container */}
                     <div className="bg-slate-900/50 border border-slate-700 rounded-none flex-1 flex flex-col relative overflow-hidden group h-[500px] lg:h-auto">
-                      {/* Tech Decor */}
                       <div className="absolute top-0 left-0 p-2 z-20 flex gap-1">
                           <div className="w-16 h-1 bg-cyan-600/50"></div>
                           <div className="w-4 h-1 bg-cyan-600/50"></div>
                       </div>
-                      <div className="absolute bottom-0 right-0 p-2 z-20 text-[10px] font-code text-slate-500 uppercase">
-                          {t.coord}: {options.width || t.auto} x {options.height || t.auto}
-                      </div>
+                      <div className="absolute bottom-0 right-0 p-2 z-20 text-[10px] font-code text-slate-500 uppercase">{t.coord}: {options.width || t.auto} x {options.height || t.auto}</div>
 
-                      {/* Image Viewport */}
                       <div className="relative z-10 w-full h-full flex items-center justify-center p-8 bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
                         <div className="absolute inset-0 bg-gradient-to-b from-transparent via-cyan-900/5 to-transparent pointer-events-none"></div>
                         
-                        {/* Holographic Scanner Effect (Overlay when processing) */}
                         {isProcessing && (
-                           <div className="absolute inset-0 z-30 pointer-events-none">
-                              <div className="scanner-overlay"></div>
-                              <div className="scanner-line"></div>
-                           </div>
+                           <div className="absolute inset-0 z-30 pointer-events-none"><div className="scanner-overlay"></div><div className="scanner-line"></div></div>
                         )}
 
-                        {/* Result View or Original View */}
                         {result ? (
                            <div className="flex flex-col items-center relative w-full h-full justify-center">
-                              <img 
-                                src={result.url} 
-                                alt="Processed" 
-                                className="max-h-[500px] w-full object-contain shadow-[0_0_30px_rgba(6,182,212,0.15)] border border-slate-700" 
-                              />
+                              {/* --- AI TEXT RESULT --- */}
+                              {result.aiText && (
+                                <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-md p-8 overflow-y-auto">
+                                   <h3 className="text-purple-400 font-tech uppercase tracking-widest mb-4 border-b border-purple-500/30 pb-2">{t.aiResult}</h3>
+                                   <p className="text-white font-code text-sm leading-relaxed whitespace-pre-wrap">{result.aiText}</p>
+                                </div>
+                              )}
                               
-                              {/* Cyberpunk HUD Status Badge */}
+                              {/* --- VIDEO RESULT --- */}
+                              {result.mimeType === 'video/mp4' ? (
+                                <video controls autoPlay loop className="max-h-[500px] w-full shadow-[0_0_30px_rgba(168,85,247,0.3)] border border-purple-500">
+                                   <source src={result.url} type="video/mp4" />
+                                   Your browser does not support the video tag.
+                                </video>
+                              ) : (
+                                /* --- IMAGE RESULT --- */
+                                <img 
+                                  src={result.url} 
+                                  alt="Processed" 
+                                  className="max-h-[500px] w-full object-contain shadow-[0_0_30px_rgba(6,182,212,0.15)] border border-slate-700" 
+                                />
+                              )}
+                              
                               <div className="absolute top-4 right-4 z-40 pointer-events-none">
                                   <div className="flex items-center gap-3 bg-cyan-950/80 border-l-2 border-cyan-400 px-4 py-2 backdrop-blur-md shadow-[0_0_15px_rgba(6,182,212,0.2)] animate-pulse">
                                       <div className="flex flex-col items-end">
@@ -414,14 +433,9 @@ function App() {
                           <div className="relative w-full h-full flex items-center justify-center">
                              {isRawFormat(currentFile.filename) ? (
                                 <div className="flex flex-col items-center justify-center p-8 border border-slate-700 bg-slate-900/80 backdrop-blur-sm relative z-20">
-                                   {/* Glitch Effect on Icon */}
-                                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-16 h-16 text-yellow-600 mb-4 opacity-80">
-                                      <path strokeLinecap="square" strokeLinejoin="miter" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                                   </svg>
+                                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1} stroke="currentColor" className="w-16 h-16 text-yellow-600 mb-4 opacity-80"><path strokeLinecap="square" strokeLinejoin="miter" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>
                                    <span className="text-yellow-500 font-tech tracking-wider text-lg animate-pulse">{t.noPreview}</span>
-                                   <span className="text-yellow-700 font-code text-xs mt-2 text-center max-w-xs uppercase border-t border-yellow-800/50 pt-2">
-                                      {lang === 'en' ? 'Awaiting parameter configuration...' : '等待参数配置...'}
-                                   </span>
+                                   <span className="text-yellow-700 font-code text-xs mt-2 text-center max-w-xs uppercase border-t border-yellow-800/50 pt-2">{lang === 'en' ? 'Awaiting parameter configuration...' : '等待参数配置...'}</span>
                                 </div>
                              ) : (
                                <>
@@ -432,16 +446,10 @@ function App() {
                                    className="max-h-[500px] object-contain shadow-2xl border border-slate-700 transition-all duration-300 z-20" 
                                    style={{
                                      transform: `rotate(${options.rotate}deg) scaleX(${options.flipX ? -1 : 1}) scaleY(${options.flipY ? -1 : 1})`,
-                                     filter: `
-                                       grayscale(${options.grayscale ? 1 : 0}) 
-                                       blur(${options.blur}px)
-                                       ${options.sharpen ? 'contrast(1.2) brightness(1.1)' : ''}
-                                     `
+                                     filter: `grayscale(${options.grayscale ? 1 : 0}) blur(${options.blur}px) ${options.sharpen ? 'contrast(1.2) brightness(1.1)' : ''}`
                                    }} 
                                  />
-                                 <div className="absolute top-4 right-4 bg-black/70 border border-cyan-500/30 text-cyan-400 text-[10px] font-code px-3 py-1 backdrop-blur-md uppercase tracking-widest z-20">
-                                   ● {t.preview}
-                                 </div>
+                                 <div className="absolute top-4 right-4 bg-black/70 border border-cyan-500/30 text-cyan-400 text-[10px] font-code px-3 py-1 backdrop-blur-md uppercase tracking-widest z-20">● {t.preview}</div>
                                </>
                              )}
                           </div>
@@ -449,7 +457,6 @@ function App() {
                       </div>
                     </div>
 
-                    {/* Data Readout / Actions */}
                     {result && (
                       <div className="bg-slate-900/80 border-t border-b border-cyan-900/50 p-4 flex items-center justify-between relative backdrop-blur-md">
                          <div className="absolute top-0 left-0 w-1 h-full bg-cyan-500"></div>
@@ -457,48 +464,35 @@ function App() {
                          <div className="flex items-center gap-8">
                             <div className="text-xs font-code">
                                <p className="text-slate-500 uppercase tracking-wider mb-1">{t.originalSize}</p>
-                               <p className="text-slate-200">
-                                 {formatSize(currentFile.size)} 
-                                 {getBitDepthLabel(currentFile.depth) && (
-                                   <span className="text-slate-600 ml-2">[{getBitDepthLabel(currentFile.depth)}]</span>
-                                 )}
-                               </p>
+                               <p className="text-slate-200">{formatSize(currentFile.size)} {getBitDepthLabel(currentFile.depth) && (<span className="text-slate-600 ml-2">[{getBitDepthLabel(currentFile.depth)}]</span>)}</p>
                             </div>
                             
                             <div className="text-2xl text-slate-700 font-thin">/</div>
 
-                            <div className="text-xs font-code">
-                               <p className="text-slate-500 uppercase tracking-wider mb-1">{t.newSize}</p>
-                               <p className="text-cyan-400 font-bold glow-text">{formatSize(result.size)}</p>
-                            </div>
-
-                            <div className="text-2xl text-slate-700 font-thin">/</div>
-
-                            <div className="text-xs font-code">
-                               <p className="text-slate-500 uppercase tracking-wider mb-1">{t.savings}</p>
-                               <p className="text-green-400">
-                                 {currentFile.size > result.size 
-                                   ? Math.round(((currentFile.size - result.size) / currentFile.size) * 100) + '%'
-                                   : 'N/A'}
-                               </p>
-                            </div>
+                            {/* Only show output size if a file was actually generated (not just text) */}
+                            {result.size && (
+                              <>
+                                <div className="text-xs font-code">
+                                  <p className="text-slate-500 uppercase tracking-wider mb-1">{t.newSize}</p>
+                                  <p className="text-cyan-400 font-bold glow-text">{formatSize(result.size)}</p>
+                                </div>
+                                <div className="text-2xl text-slate-700 font-thin">/</div>
+                                <div className="text-xs font-code">
+                                  <p className="text-slate-500 uppercase tracking-wider mb-1">{t.savings}</p>
+                                  <p className="text-green-400">{currentFile.size > result.size ? Math.round(((currentFile.size - result.size) / currentFile.size) * 100) + '%' : 'N/A'}</p>
+                                </div>
+                              </>
+                            )}
                          </div>
                          
                          <div className="flex gap-4">
-                           <button 
-                             onClick={handleReset}
-                             className="px-4 py-2 text-xs font-code font-bold text-slate-400 hover:text-white border border-transparent hover:border-slate-500 transition-all uppercase tracking-wider"
-                           >
-                             {t.startOver}
-                           </button>
-                           <a 
-                             href={result.url} 
-                             download={result.filename}
-                             className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 font-tech font-bold uppercase tracking-widest text-xs clip-button shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:shadow-[0_0_25px_rgba(6,182,212,0.6)] transition-all"
-                           >
-                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                              {t.download}
-                           </a>
+                           <button onClick={handleReset} className="px-4 py-2 text-xs font-code font-bold text-slate-400 hover:text-white border border-transparent hover:border-slate-500 transition-all uppercase tracking-wider">{t.startOver}</button>
+                           {result.url && (
+                             <a href={result.url} download={result.filename} className="flex items-center gap-2 bg-cyan-600 hover:bg-cyan-500 text-white px-6 py-2 font-tech font-bold uppercase tracking-widest text-xs clip-button shadow-[0_0_15px_rgba(6,182,212,0.4)] hover:shadow-[0_0_25px_rgba(6,182,212,0.6)] transition-all">
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="square" strokeLinejoin="miter" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                {t.download}
+                             </a>
+                           )}
                          </div>
                       </div>
                     )}
