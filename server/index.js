@@ -108,13 +108,10 @@ app.post('/api/process', async (req, res) => {
   if (!fileName) return res.status(404).json({ error: 'File not found' });
   
   // --- Determine Output Format ---
-  // Fix: Logic to preserve 'original' format properly, especially for BMP
   const originalExt = path.extname(fileName).toLowerCase().replace('.', '');
   let targetFormat = options.format;
   
   if (targetFormat === 'original') {
-    // If original, we try to keep the extension. 
-    // If it was BMP, target is BMP. If it was PNG, target is PNG.
     if (['bmp', 'png', 'webp', 'gif', 'avif', 'tiff'].includes(originalExt)) {
       targetFormat = originalExt;
     } else {
@@ -133,7 +130,7 @@ app.post('/api/process', async (req, res) => {
 
     // --- Input Handling Logic ---
     if (options.rawWidth && options.rawHeight) {
-      // 1. Explicit RAW config from frontend
+      // 1. Explicit RAW config
       const isFourChannel = ['rgba', 'bgra', 'uyvy'].includes(options.rawPixelFormat || '');
       p = sharp(filePath, {
         raw: {
@@ -143,25 +140,38 @@ app.post('/api/process', async (req, res) => {
         }
       });
     } else if (fileName.toLowerCase().endsWith('.bmp')) {
-      // 2. BMP Logic: Try native first, fall back to bmp-js decoding
+      // 2. BMP Logic
       try {
+        // Try native Sharp first (efficient)
         p = sharp(filePath);
-        await p.metadata(); // Verify native support
+        await p.metadata(); 
       } catch (e) {
-        // Native failed, use bmp-js
+        // Native failed, use bmp-js fallback
         const buffer = fs.readFileSync(filePath);
         const bmpData = bmp.decode(buffer);
         
-        // bmp-js decodes into ABGR. Sharp expects RGBA.
+        // bmp-js raw data is ABGR (Alpha, Blue, Green, Red)
+        // Sharp expects RGBA (Red, Green, Blue, Alpha)
         const abgr = bmpData.data;
         const rgba = Buffer.alloc(abgr.length);
         
         for (let i = 0; i < abgr.length; i += 4) {
-          // bmp-js: [A, B, G, R]
-          rgba[i]     = abgr[i + 3]; // R
-          rgba[i + 1] = abgr[i + 2]; // G
-          rgba[i + 2] = abgr[i + 1]; // B
-          rgba[i + 3] = abgr[i];     // A
+          // Input: [Alpha, Blue, Green, Red]
+          const alpha = abgr[i];
+          const blue = abgr[i + 1];
+          const green = abgr[i + 2];
+          const red = abgr[i + 3];
+
+          // Output: [Red, Green, Blue, Alpha]
+          rgba[i]     = red;
+          rgba[i + 1] = green;
+          rgba[i + 2] = blue;
+          
+          // CRITICAL FIX:
+          // 24-bit BMPs often have 0 in the Alpha byte after decoding to 32-bit.
+          // Sharp treats Alpha=0 as fully transparent (invisible/black).
+          // We force Alpha to 255 (Opaque) if it's 0 to ensure the image is visible.
+          rgba[i + 3] = alpha === 0 ? 255 : alpha; 
         }
 
         p = sharp(rgba, {
@@ -186,39 +196,44 @@ app.post('/api/process', async (req, res) => {
     if (options.sharpen) p = p.sharpen();
     if (options.width || options.height) p = p.resize(options.width, options.height, { fit: options.resizeMode || 'cover' });
     
-    // --- Output Format ---
+    // --- Output Processing ---
     if (targetFormat === 'bmp') {
-      // FIX: Sharp throws error for 'bmp' format output. We must encode manually using bmp-js.
+      // Sharp cannot write BMP directly. We must use bmp-js encode.
       
-      // 1. Force sRGB and Alpha channel to ensure we have standard 4-channel RGBA
-      // Even if grayscale, this makes it 4 channels (R=G=B, A=255) which matches bmp-js expectation.
+      // 1. Force sRGB and Ensure Alpha channel exists (RGBA)
       p = p.toColorspace('srgb').ensureAlpha();
       
-      // 2. Get raw buffer
+      // 2. Get raw buffer from Sharp
       const { data: rgbaBuffer, info } = await p.raw().toBuffer({ resolveWithObject: true });
       
-      // 3. Convert RGBA (Sharp) -> ABGR (bmp-js)
+      // 3. Convert RGBA (Sharp) back to ABGR (bmp-js)
       const abgrBuffer = Buffer.alloc(rgbaBuffer.length);
       for (let i = 0; i < rgbaBuffer.length; i += 4) {
         // Sharp: R, G, B, A
-        // BMP:   A, B, G, R
-        abgrBuffer[i]   = rgbaBuffer[i+3]; // A
-        abgrBuffer[i+1] = rgbaBuffer[i+2]; // B
-        abgrBuffer[i+2] = rgbaBuffer[i+1]; // G
-        abgrBuffer[i+3] = rgbaBuffer[i];   // R
+        const r = rgbaBuffer[i];
+        const g = rgbaBuffer[i+1];
+        const b = rgbaBuffer[i+2];
+        const a = rgbaBuffer[i+3];
+
+        // BMP: A, B, G, R
+        abgrBuffer[i]   = a; 
+        abgrBuffer[i+1] = b;
+        abgrBuffer[i+2] = g;
+        abgrBuffer[i+3] = r;
       }
 
-      // 4. Encode to BMP
+      // 4. Encode to BMP format
       const bmpData = bmp.encode({
         data: abgrBuffer,
         width: info.width,
         height: info.height
       });
 
-      // 5. Write to disk
+      // 5. Save
       fs.writeFileSync(outputPath, bmpData.data);
       
     } else {
+      // Standard Sharp Output
       if (targetFormat === 'png') p = p.png(); 
       else if (targetFormat === 'webp') p = p.webp({ quality: options.quality }); 
       else p = p.jpeg({ quality: options.quality });
