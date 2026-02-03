@@ -127,14 +127,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   };
 
   const loadSessionHistory = async (id: string) => {
-    // Don't set main loading state to avoid UI blocking, just clear/load
     setMessages([]); 
     try {
         const res = await fetch(`/api/ai/sessions/${id}`);
         if (!res.ok) return;
         const sessionData = await res.json();
         
-        // Convert Backend History (Gemini/Unified Format) to Frontend Messages
         if (sessionData.history && Array.isArray(sessionData.history)) {
             const convertedMessages: ChatMessage[] = sessionData.history.map((h: any, index: number) => {
                 let text = "";
@@ -143,11 +141,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                 if (h.parts) {
                     h.parts.forEach((p: any) => {
                         if (p.text) text += p.text;
-                        // Attempt to reconstruct attachments if inlineData is present (base64)
                         if (p.inlineData) {
                             atts.push({
                                 id: `hist-att-${index}-${Date.now()}-${Math.random()}`,
-                                type: 'image', // Default assumption
+                                type: 'image',
                                 url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`,
                                 filename: 'history_asset',
                                 mimeType: p.inlineData.mimeType,
@@ -161,7 +158,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                     id: `msg-hist-${index}-${Date.now()}`,
                     role: h.role === 'model' ? 'model' : 'user',
                     text: text,
-                    timestamp: Date.now(), // Mock timestamp as it's not strictly persisted in simplified history
+                    timestamp: Date.now(),
                     attachments: atts.length > 0 ? atts : undefined
                 };
             });
@@ -181,7 +178,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     const newSession = await res.json();
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
-    // Messages cleared via useEffect trigger
   };
 
   const deleteSession = async (id: string, e: React.MouseEvent) => {
@@ -199,10 +195,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     const textToSend = textOverride || input;
     if ((!textToSend.trim() && attachments.length === 0) || isLoading) return;
     
-    // Auto-create session if none
     let activeSessionId = currentSessionId;
     if (!activeSessionId) {
-        // Quick session creation
         const res = await fetch('/api/ai/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'general' }) });
         const newS = await res.json();
         setSessions(prev => [newS, ...prev]);
@@ -212,7 +206,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
     const tempAttachments = [...attachments];
     
-    // User Message
     const userMsg: ChatMessage = {
       id: Date.now().toString(),
       role: 'user',
@@ -226,7 +219,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     setAttachments([]);
     setIsLoading(true);
 
-    // AI Placeholder
     const aiMsgId = (Date.now() + 1).toString();
     const aiMsgPlaceholder: ChatMessage = {
       id: aiMsgId,
@@ -244,9 +236,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
         body: JSON.stringify({
           sessionId: activeSessionId,
           message: textToSend,
-          attachments: tempAttachments, // Send metadata + base64 if small
+          attachments: tempAttachments,
           model: model,
-          lang: lang // Pass language setting
+          lang: lang
         })
       });
 
@@ -263,6 +255,19 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
         const chunkValue = decoder.decode(value, { stream: !done });
         accumulatedText += chunkValue;
 
+        // Try to check if it's a JSON error returned as string
+        if (accumulatedText.startsWith('{"error"')) {
+           try {
+               const errObj = JSON.parse(accumulatedText);
+               const msg = errObj.error?.message || t.error;
+               setMessages(prev => prev.map(msgItem => 
+                 msgItem.id === aiMsgId ? { ...msgItem, text: msg, isThinking: false } : msgItem
+               ));
+               setIsLoading(false);
+               return;
+           } catch(e) {}
+        }
+
         setMessages(prev => prev.map(msg => 
           msg.id === aiMsgId 
             ? { ...msg, text: accumulatedText, isThinking: false } 
@@ -270,10 +275,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
         ));
       }
       
-      // Update Session Preview in list locally
       setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, lastMessageAt: Date.now(), preview: accumulatedText.substring(0, 50) } : s));
 
-    } catch (error) {
+    } catch (error: any) {
       console.error(error);
       setMessages(prev => prev.map(msg => 
         msg.id === aiMsgId ? { ...msg, text: t.error, isThinking: false } : msg
@@ -295,11 +299,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               const res = await fetch('/api/upload', { method: 'POST', body: formData });
               const data = await res.json();
               
-              // For small text files/images, we can also read client side for preview
-              // For now, we trust server response
               const newAtt: AIAttachment = {
                   id: data.id,
-                  type: file.type.startsWith('image/') ? 'image' : 'file',
+                  type: file.type.startsWith('image/') ? 'image' : (file.type === 'application/pdf' ? 'file' : 'file'),
                   url: data.url,
                   filename: data.filename,
                   mimeType: data.mimeType || file.type
@@ -319,16 +321,16 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
           mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
           mediaRecorder.onstop = async () => {
-              const blob = new Blob(chunks, { type: 'audio/webm' }); // Chrome uses webm
+              const blob = new Blob(chunks, { type: 'audio/webm' });
               const formData = new FormData();
               formData.append('audio', blob, 'voice_input.webm');
               
-              setIsLoading(true); // Temp loading while transcribing
+              setIsLoading(true);
               try {
                   const res = await fetch('/api/ai/transcribe', { method: 'POST', headers: { 'api-key': 'internal' }, body: formData });
                   const data = await res.json();
                   if (data.text) {
-                      handleSend(data.text); // Auto send transcript
+                      handleSend(data.text);
                   }
               } catch (e) { console.error(e); } finally { setIsLoading(false); }
           };
@@ -346,9 +348,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   // --- TTS ---
   const playTTS = async (text: string) => {
       try {
-          // Strip Markdown images/video from TTS
           const cleanText = text.replace(/!\[.*?\]\(.*?\)/g, '');
-          
           const res = await fetch('/api/ai/tts', { 
               method: 'POST', 
               headers: { 'Content-Type': 'application/json' }, 
@@ -362,9 +362,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       } catch (e) { console.error(e); }
   };
 
-  // --- Message Renderer with Markdown Image/Video Support ---
   const renderMessageContent = (text: string) => {
-      // Regex to find ![alt](url)
+      // Friendly handle for bracketed system messages
+      if (text.startsWith('[') && text.endsWith(']')) {
+          return <span className="text-amber-500 font-code italic bg-amber-500/10 px-2 py-1 border border-amber-500/20 block rounded">{text}</span>;
+      }
+
       const parts = text.split(/(!\[.*?\]\(.*?\))/g);
       return parts.map((part, index) => {
           const imgMatch = part.match(/!\[(.*?)\]\((.*?)\)/);
@@ -372,7 +375,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               const alt = imgMatch[1];
               const url = imgMatch[2];
               
-              // Handle MP4 Video
               if (url.endsWith('.mp4') || alt.toLowerCase().includes('video')) {
                    return (
                       <div key={index} className="my-2 rounded-lg overflow-hidden border border-purple-600 shadow-lg relative group">
@@ -393,15 +395,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       });
   };
 
-  // --- Render Helpers ---
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const currentMeta = modelMeta[model] || { cost: 0, iq: 0, speed: 0 };
 
   return (
     <div className="flex h-full bg-[#020617] text-slate-200 overflow-hidden font-sans relative">
-      
-      {/* --- SIDEBAR --- */}
       <div className="w-16 md:w-64 flex flex-col bg-slate-900/50 border-r border-cyan-900/30 backdrop-blur-md z-20 transition-all">
         <div className="p-4 flex flex-col gap-2">
           <button onClick={() => createSession('general')} className="w-full flex items-center justify-center md:justify-start gap-3 px-3 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-tech text-xs tracking-widest uppercase shadow-lg transition-all clip-button">
@@ -428,7 +427,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
            </div>
         </div>
 
-        {/* Mode Selector (Quick Switch) */}
         <div className="p-2 border-t border-slate-800 hidden md:block">
             <div className="text-[10px] text-slate-500 font-code mb-2">{t.modes}</div>
             <div className="grid grid-cols-2 gap-1">
@@ -441,10 +439,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
         </div>
       </div>
 
-      {/* --- MAIN CHAT AREA --- */}
       <div className="flex-1 flex flex-col relative bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
-        
-        {/* Header */}
         <div className="h-16 md:h-14 border-b border-cyan-900/30 bg-slate-900/80 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between px-4 md:px-6 z-30 py-2 md:py-0 gap-2 md:gap-0">
            <div className="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-4 w-full md:w-auto">
               <div className="flex items-center gap-2">
@@ -468,7 +463,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                 </select>
               </div>
               
-              {/* Stats Badge */}
               <div className="flex items-center gap-3 bg-black/20 px-2 py-1 rounded border border-white/5">
                  <div className="flex items-center gap-1">
                     <span className="text-[9px] text-slate-500 font-code uppercase">{t.cost}</span>
@@ -489,13 +483,11 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                  {currentMeta.label && <span className="text-[9px] font-bold text-cyan-400 bg-cyan-900/30 px-1 rounded">{currentMeta.label}</span>}
               </div>
            </div>
-           
            <div className="hidden md:flex gap-4 self-center">
               {currentSessionId && <span className="text-xs font-code text-slate-500 uppercase border px-2 py-0.5 border-slate-700 rounded-full">{sessions.find(s=>s.id===currentSessionId)?.mode} MODE</span>}
            </div>
         </div>
 
-        {/* Messages */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar scroll-smooth">
           {messages.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center opacity-0 animate-[fadeIn_0.5s_ease-out_forwards]">
@@ -515,8 +507,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                     </div>
                     
                     <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                       
-                       {/* Attachments Display */}
                        {msg.attachments && msg.attachments.length > 0 && (
                            <div className="flex flex-wrap gap-2 mb-2 justify-end">
                                {msg.attachments.map(att => (
@@ -524,7 +514,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                                        {att.type === 'image' ? (
                                            <img src={att.url} className="w-full h-full object-cover" />
                                        ) : (
-                                           <div className="text-[9px] text-center p-1 text-slate-400 break-all">{att.filename}</div>
+                                           <div className="flex flex-col items-center justify-center p-2 text-center">
+                                              <svg className="w-6 h-6 text-slate-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                                              <div className="text-[8px] text-slate-400 break-all">{att.filename}</div>
+                                           </div>
                                        )}
                                    </div>
                                ))}
@@ -535,7 +528,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                           {msg.isThinking ? <span className="animate-pulse text-purple-400">{t.processing}</span> : renderMessageContent(msg.text)}
                        </div>
                        
-                       {msg.role === 'model' && !msg.isThinking && (
+                       {msg.role === 'model' && !msg.isThinking && !msg.text.startsWith('[') && (
                            <button onClick={() => playTTS(msg.text)} className="mt-1 text-[10px] text-slate-600 hover:text-cyan-400 flex items-center gap-1 cursor-pointer transition-colors">
                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>
                                {t.tts}
@@ -549,15 +542,13 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
           )}
         </div>
 
-        {/* Input Area */}
         <div className="p-4 bg-slate-900/90 backdrop-blur-xl border-t border-cyan-900/30 relative z-30">
-           {/* Attachment Preview Bar */}
            {attachments.length > 0 && (
                <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
                    <span className="text-xs text-cyan-500 font-code self-center mr-2">{t.attach}</span>
                    {attachments.map((att, i) => (
                        <div key={i} className="relative bg-slate-800 border border-slate-600 rounded p-1 w-12 h-12 flex items-center justify-center shrink-0">
-                           {att.type==='image' ? <img src={att.url} className="w-full h-full object-cover opacity-70" /> : <span className="text-[8px] text-slate-400">FILE</span>}
+                           {att.type==='image' ? <img src={att.url} className="w-full h-full object-cover opacity-70" /> : <div className="text-[8px] text-slate-400 uppercase">FILE</div>}
                            <button onClick={() => setAttachments(prev => prev.filter((_, idx) => idx !== i))} className="absolute -top-1 -right-1 bg-red-500 text-white rounded-full w-4 h-4 text-[10px] flex items-center justify-center">×</button>
                        </div>
                    ))}
@@ -565,18 +556,13 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
            )}
 
            <div className="max-w-4xl mx-auto flex gap-3 items-end">
-              {/* Tools: Upload & Voice */}
               <div className="flex gap-2 pb-2">
                   <button onClick={() => fileInputRef.current?.click()} className="text-slate-500 hover:text-cyan-400 p-2 border border-transparent hover:border-slate-700 rounded transition-all">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
                   </button>
                   <input type="file" ref={fileInputRef} onChange={handleFileUpload} className="hidden" />
                   
-                  <button 
-                    onMouseDown={startRecording} 
-                    onMouseUp={stopRecording} 
-                    className={`p-2 rounded border transition-all ${isRecording ? 'bg-red-900/50 text-red-500 border-red-500 animate-pulse' : 'text-slate-500 hover:text-cyan-400 border-transparent hover:border-slate-700'}`}
-                  >
+                  <button onMouseDown={startRecording} onMouseUp={stopRecording} className={`p-2 rounded border transition-all ${isRecording ? 'bg-red-900/50 text-red-500 border-red-500 animate-pulse' : 'text-slate-500 hover:text-cyan-400 border-transparent hover:border-slate-700'}`}>
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
                   </button>
               </div>
@@ -584,23 +570,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               <div className="relative flex-1 group">
                  <div className="absolute -top-1 -left-1 w-2 h-2 border-t border-l border-cyan-500/50"></div>
                  <div className="absolute -bottom-1 -right-1 w-2 h-2 border-b border-r border-cyan-500/50"></div>
-                 
-                 <textarea
-                   ref={inputRef}
-                   value={input}
-                   onChange={(e) => setInput(e.target.value)}
-                   onKeyDown={(e) => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                   placeholder={isRecording ? t.listening : t.placeholder}
-                   className="w-full bg-black/60 border border-slate-700 text-white p-3 pr-10 focus:outline-none focus:border-cyan-500/50 transition-all font-sans resize-none custom-scrollbar max-h-32 min-h-[48px] rounded-none"
-                   rows={1}
-                 />
+                 <textarea ref={inputRef} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={(e) => { if(e.key==='Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }} placeholder={isRecording ? t.listening : t.placeholder} className="w-full bg-black/60 border border-slate-700 text-white p-3 pr-10 focus:outline-none focus:border-cyan-500/50 transition-all font-sans resize-none custom-scrollbar max-h-32 min-h-[48px] rounded-none" rows={1} />
               </div>
 
-              <button 
-                onClick={() => handleSend()}
-                disabled={isLoading || (!input.trim() && attachments.length===0)}
-                className={`p-3 mb-1 bg-cyan-900/20 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-600 hover:text-white transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
+              <button onClick={() => handleSend()} disabled={isLoading || (!input.trim() && attachments.length===0)} className={`p-3 mb-1 bg-cyan-900/20 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-600 hover:text-white transition-all ${isLoading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 5l7 7-7 7M5 5l7 7-7 7" /></svg>
               </button>
            </div>
