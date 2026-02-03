@@ -227,40 +227,6 @@ function App() {
     }
   };
 
-  const handleAIProcess = async () => {
-    if (!currentFile) return;
-    setIsProcessing(true);
-    setResult(null); 
-    setError(null);
-
-    try {
-      const response = await fetch('/api/ai-process', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: currentFile.id,
-          task: options.aiTask,
-          prompt: options.aiPrompt
-        })
-      });
-
-      if (!response.ok) {
-         const errorData = await response.json();
-         throw new Error(errorData.error || t.processFailed);
-      }
-
-      const data: ProcessResponse = await response.json();
-      setResult(data);
-      setTotalProcessed(prev => prev + 1);
-
-    } catch (error: any) {
-      console.error(error);
-      setError(error.message); // Set UI error state instead of alert
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
   const formatSize = (bytes: number) => {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -401,7 +367,6 @@ function App() {
                       options={options} 
                       setOptions={setOptions} 
                       onProcess={handleProcess}
-                      onAIProcess={handleAIProcess}
                       isProcessing={isProcessing}
                       originalDimensions={{ width: currentFile.width || 0, height: currentFile.height || 0 }}
                       lang={lang}

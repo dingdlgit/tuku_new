@@ -1,12 +1,11 @@
 
 import React, { useState } from 'react';
-import { ImageFormat, ProcessOptions, Language, RawPixelFormat, WatermarkPosition, AITaskType } from '../types';
+import { ImageFormat, ProcessOptions, Language, RawPixelFormat, WatermarkPosition } from '../types';
 
 interface ControlsProps {
   options: ProcessOptions;
   setOptions: React.Dispatch<React.SetStateAction<ProcessOptions>>;
   onProcess: () => void;
-  onAIProcess: () => void;
   isProcessing: boolean;
   originalDimensions?: { width: number; height: number };
   lang: Language;
@@ -17,27 +16,13 @@ export const Controls: React.FC<ControlsProps> = ({
   options, 
   setOptions, 
   onProcess, 
-  onAIProcess,
   isProcessing,
   originalDimensions,
   lang,
   inputFormat
 }) => {
-  // AI Security State
-  const [isAiUnlocked, setIsAiUnlocked] = useState(false);
-  const [showAiAuth, setShowAiAuth] = useState(false);
-  const [aiPassword, setAiPassword] = useState('');
-
   const t = {
     en: {
-      aiHeader: "NEURAL ENGINE",
-      aiPrompt: "PROMPT / INSTRUCTION",
-      aiTask: "AI TASK MODEL",
-      taskVision: "VISION (DESCRIBE)",
-      taskImgGen: "IMAGE GEN (EDIT)",
-      taskVideo: "VIDEO GEN (VEO)",
-      aiBtn: "ACTIVATE NEURAL NET",
-      aiLocked: "NEURAL NET LOCKED // AUTH REQ",
       settings: "SYSTEM_CONFIG",
       sourceSettings: "RAW_DATA_INPUT",
       sourceDesc: "Required: Specify format & dimensions.",
@@ -64,22 +49,9 @@ export const Controls: React.FC<ControlsProps> = ({
       flipH: "FLIP H",
       flipV: "FLIP V",
       widthLabel: "W",
-      heightLabel: "H",
-      authTitle: "SECURITY PROTOCOL",
-      enterPwd: "ENTER NEURAL TOKEN",
-      unlock: "AUTHORIZE",
-      cancel: "ABORT",
-      accessDenied: "ACCESS DENIED: INVALID TOKEN"
+      heightLabel: "H"
     },
     zh: {
-      aiHeader: "神经引擎 (AI)",
-      aiPrompt: "提示词 / 指令",
-      aiTask: "AI 任务模型",
-      taskVision: "视觉理解 (描述场景)",
-      taskImgGen: "图像生成 (AI修图)",
-      taskVideo: "视频生成 (Veo)",
-      aiBtn: "激活神经网络",
-      aiLocked: "神经系统已锁定 // 需授权",
       settings: "系统配置",
       sourceSettings: "RAW 数据源",
       sourceDesc: "必填：指定格式与尺寸",
@@ -106,12 +78,7 @@ export const Controls: React.FC<ControlsProps> = ({
       flipH: "水平翻转",
       flipV: "垂直翻转",
       widthLabel: "宽",
-      heightLabel: "高",
-      authTitle: "安全协议",
-      enterPwd: "输入神经密钥",
-      unlock: "授权",
-      cancel: "取消",
-      accessDenied: "访问拒绝：无效的密钥"
+      heightLabel: "高"
     }
   }[lang];
 
@@ -159,26 +126,6 @@ export const Controls: React.FC<ControlsProps> = ({
     });
   };
 
-  // --- AI SECURITY LOGIC ---
-  const handleAIButtonClick = () => {
-    if (isAiUnlocked) {
-      onAIProcess();
-    } else {
-      setAiPassword('');
-      setShowAiAuth(true);
-    }
-  };
-
-  const handleUnlockAttempt = () => {
-    if (aiPassword === '666666') {
-      setIsAiUnlocked(true);
-      setShowAiAuth(false);
-    } else {
-      alert(t.accessDenied);
-      setAiPassword('');
-    }
-  };
-
   const isRaw = inputFormat && (
       ['.uyvy', '.yuv', '.nv21', '.raw', '.rgb', '.bgr', '.bgra', '.rgba', '.bin'].some(ext => inputFormat.toLowerCase().endsWith(ext))
   );
@@ -187,37 +134,6 @@ export const Controls: React.FC<ControlsProps> = ({
 
   return (
     <>
-      {/* AI Password Modal */}
-      {showAiAuth && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-md">
-           <div className="bg-slate-900 border border-purple-500/50 p-8 max-w-sm w-full shadow-[0_0_50px_rgba(168,85,247,0.4)] relative overflow-hidden group">
-               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-600 via-pink-500 to-purple-600 animate-pulse"></div>
-               
-               <div className="text-center mb-6">
-                 <div className="inline-block p-3 rounded-full bg-purple-900/30 border border-purple-500/30 mb-3">
-                    <svg className="w-8 h-8 text-purple-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>
-                 </div>
-                 <h3 className="text-xl font-tech text-purple-400 tracking-widest uppercase">{t.authTitle}</h3>
-               </div>
-
-               <p className="text-[10px] text-slate-500 font-code text-center mb-2 uppercase tracking-wider">{t.enterPwd}</p>
-               <input 
-                 type="password" 
-                 value={aiPassword}
-                 onChange={(e) => setAiPassword(e.target.value)}
-                 className="w-full bg-black border border-purple-800 text-purple-100 px-4 py-3 font-code text-center tracking-[0.5em] mb-6 focus:outline-none focus:border-purple-500 focus:shadow-[0_0_15px_rgba(168,85,247,0.2)] transition-all"
-                 autoFocus
-                 placeholder="******"
-                 onKeyDown={(e) => e.key === 'Enter' && handleUnlockAttempt()}
-               />
-               <div className="flex gap-4">
-                  <button onClick={() => setShowAiAuth(false)} className="flex-1 py-2 font-code text-slate-500 hover:text-white border border-transparent hover:border-slate-500 transition-colors uppercase text-xs">{t.cancel}</button>
-                  <button onClick={handleUnlockAttempt} className="flex-1 py-2 bg-purple-700 hover:bg-purple-600 text-white font-tech tracking-wider clip-button uppercase text-xs shadow-[0_0_15px_rgba(168,85,247,0.4)]">{t.unlock}</button>
-               </div>
-           </div>
-        </div>
-      )}
-
       <div className="bg-slate-900/80 backdrop-blur-md rounded-none border border-cyan-900/50 flex flex-col h-full overflow-hidden relative">
         <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-600 to-transparent"></div>
 
@@ -235,62 +151,6 @@ export const Controls: React.FC<ControlsProps> = ({
 
         <div className="flex-1 overflow-y-auto p-5 space-y-8 custom-scrollbar">
           
-          {/* --- AI SECTION --- */}
-          <section className={`bg-purple-900/20 p-4 border-l-2 ${isAiUnlocked ? 'border-purple-500' : 'border-slate-600'} relative overflow-hidden group transition-all`}>
-               <div className={`absolute inset-0 ${isAiUnlocked ? 'bg-purple-500/5 group-hover:bg-purple-500/10' : 'bg-black/40'} transition-colors pointer-events-none`}></div>
-               
-               <div className="flex justify-between items-start mb-3">
-                 <label className={`block text-xs font-bold ${isAiUnlocked ? 'text-purple-400' : 'text-slate-500'} font-tech tracking-wider uppercase flex items-center gap-2`}>
-                    <svg className={`w-4 h-4 ${isAiUnlocked ? 'animate-pulse' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                    {t.aiHeader}
-                 </label>
-                 {!isAiUnlocked && <svg className="w-4 h-4 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>}
-               </div>
-               
-               <div className={`transition-opacity duration-300 ${!isAiUnlocked ? 'opacity-50 grayscale pointer-events-none' : 'opacity-100'}`}>
-                 <div className="mb-4">
-                   <label className="block text-[10px] text-slate-400 mb-1 font-code">{t.aiTask}</label>
-                   <select
-                     value={options.aiTask || 'vision'}
-                     onChange={(e) => updateOption('aiTask', e.target.value as AITaskType)}
-                     className="w-full bg-black/40 border border-purple-500/30 text-purple-100 text-xs py-2 px-3 focus:outline-none focus:border-purple-500 font-code uppercase"
-                   >
-                     <option value="vision">{t.taskVision}</option>
-                     <option value="generate-image">{t.taskImgGen}</option>
-                     <option value="generate-video">{t.taskVideo}</option>
-                   </select>
-                 </div>
-
-                 <div className="mb-4">
-                    <label className="block text-[10px] text-slate-400 mb-1 font-code">{t.aiPrompt}</label>
-                    <textarea 
-                      rows={3}
-                      value={options.aiPrompt}
-                      onChange={(e) => updateOption('aiPrompt', e.target.value)}
-                      placeholder={isAiUnlocked ? "e.g. Describe this image..." : "LOCKED"}
-                      className="w-full bg-black/40 border border-purple-500/30 text-white text-xs py-2 px-3 focus:outline-none focus:border-purple-500 font-code rounded-sm"
-                      disabled={!isAiUnlocked}
-                    />
-                 </div>
-               </div>
-
-               <button
-                 onClick={handleAIButtonClick}
-                 disabled={isProcessing}
-                 className={`w-full py-2 px-3 font-tech font-bold uppercase tracking-wider text-[10px] clip-button transition-all relative overflow-hidden flex items-center justify-center gap-2
-                   ${isProcessing 
-                     ? 'bg-slate-700 text-slate-400 cursor-not-allowed' 
-                     : isAiUnlocked 
-                        ? 'bg-purple-600 hover:bg-purple-500 text-white shadow-[0_0_15px_rgba(168,85,247,0.4)]'
-                        : 'bg-slate-800 border border-slate-600 text-slate-400 hover:text-white hover:border-purple-500/50'
-                   }
-                 `}
-               >
-                 {!isAiUnlocked && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>}
-                 {isProcessing ? t.processing : (isAiUnlocked ? t.aiBtn : t.aiLocked)}
-               </button>
-          </section>
-
           {isRaw && (
             <section className="bg-amber-900/20 p-4 border-l-2 border-amber-500">
                <label className="block text-xs font-bold text-amber-500 mb-1 font-tech tracking-wider">{t.sourceSettings}</label>
