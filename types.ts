@@ -50,6 +50,7 @@ export interface UploadResponse {
   height?: number;
   depth?: string;
   format?: string;
+  mimeType?: string; // Added for AI Core
 }
 
 export interface ProcessResponse {
@@ -103,16 +104,38 @@ export interface StockAnalysisResult {
   history: OHLC[];
 }
 
-// --- AI Chat Core Types ---
+// --- AI CORE PRO TYPES ---
 
-export type ChatRole = 'user' | 'model';
+export type ChatRole = 'user' | 'model' | 'system';
+
+export type AIWorkMode = 'general' | 'coder' | 'analyst' | 'creative';
+
+export interface AIAttachment {
+  id: string;
+  type: 'image' | 'file' | 'audio';
+  url: string; // Local preview or server URL
+  filename: string;
+  mimeType: string;
+  data?: string; // Base64 for preview/upload
+}
 
 export interface ChatMessage {
   id: string;
   role: ChatRole;
   text: string;
   timestamp: number;
-  isThinking?: boolean; // For loading state
+  isThinking?: boolean;
+  attachments?: AIAttachment[];
+  audioUrl?: string; // For TTS output
+}
+
+export interface ChatSession {
+  id: string;
+  title: string;
+  mode: AIWorkMode;
+  createdAt: number;
+  lastMessageAt: number;
+  preview: string;
 }
 
 export type AIModelVersion = 'gemini-3-flash-preview' | 'gemini-3-pro-preview';
