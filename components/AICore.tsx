@@ -73,6 +73,13 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     }
   }[lang];
 
+  const modeLabels: Record<string, string> = {
+      general: t.modeGen,
+      coder: t.modeCode,
+      analyst: t.modeData,
+      creative: t.modeCreate
+  };
+
   // --- Session Management ---
   useEffect(() => {
     fetchSessions();
@@ -267,7 +274,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   // --- TTS ---
   const playTTS = async (text: string) => {
       try {
-          // Strip Markdown images from TTS
+          // Strip Markdown images/video from TTS
           const cleanText = text.replace(/!\[.*?\]\(.*?\)/g, '');
           
           const res = await fetch('/api/ai/tts', { 
@@ -283,16 +290,29 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       } catch (e) { console.error(e); }
   };
 
-  // --- Message Renderer with Markdown Image Support ---
+  // --- Message Renderer with Markdown Image/Video Support ---
   const renderMessageContent = (text: string) => {
       // Regex to find ![alt](url)
       const parts = text.split(/(!\[.*?\]\(.*?\))/g);
       return parts.map((part, index) => {
           const imgMatch = part.match(/!\[(.*?)\]\((.*?)\)/);
           if (imgMatch) {
+              const alt = imgMatch[1];
+              const url = imgMatch[2];
+              
+              // Handle MP4 Video
+              if (url.endsWith('.mp4') || alt.toLowerCase().includes('video')) {
+                   return (
+                      <div key={index} className="my-2 rounded-lg overflow-hidden border border-purple-600 shadow-lg relative group">
+                          <video src={url} controls className="w-full max-h-64 bg-black/50" />
+                          <div className="bg-purple-900/50 p-1 text-[10px] text-purple-300 font-code text-center">GENERATED_VEO_ASSET</div>
+                      </div>
+                   );
+              }
+
               return (
                   <div key={index} className="my-2 rounded-lg overflow-hidden border border-slate-600 shadow-lg">
-                      <img src={imgMatch[2]} alt={imgMatch[1]} className="w-full max-h-64 object-contain bg-black/20" />
+                      <img src={url} alt={alt} className="w-full max-h-64 object-contain bg-black/20" />
                       <div className="bg-slate-900/50 p-1 text-[10px] text-slate-500 font-code text-center">GENERATED_ASSET</div>
                   </div>
               );
@@ -339,7 +359,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
             <div className="text-[10px] text-slate-500 font-code mb-2">{t.modes}</div>
             <div className="grid grid-cols-2 gap-1">
                 {(['general', 'coder', 'analyst', 'creative'] as AIWorkMode[]).map(m => (
-                    <button key={m} onClick={() => createSession(m)} className="text-[9px] border border-slate-700 p-1 hover:border-cyan-500 hover:text-cyan-400 uppercase transition-colors">{m}</button>
+                    <button key={m} onClick={() => createSession(m)} className="text-[9px] border border-slate-700 p-1 hover:border-cyan-500 hover:text-cyan-400 uppercase transition-colors">
+                        {modeLabels[m]} 
+                    </button>
                 ))}
             </div>
         </div>

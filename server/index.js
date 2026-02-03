@@ -237,10 +237,9 @@ async function getFileParts(attachments) {
     return parts;
 }
 
-// Helper: Generate Image using Gemini 2.5 Flash Image (Nano Banana)
+// Helper: Generate Image using Gemini 2.5 Flash Image
 async function generateImageInternal(prompt) {
   const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  // Using gemini-2.5-flash-image for generation as requested in specs
   const response = await ai.models.generateContent({
     model: 'gemini-2.5-flash-image',
     contents: { parts: [{ text: prompt }] },
@@ -261,6 +260,43 @@ async function generateImageInternal(prompt) {
       const outputPath = path.join(PROCESSED_DIR, outFilename);
       fs.writeFileSync(outputPath, Buffer.from(outBase64, 'base64'));
       return `/api/processed/${outFilename}`;
+  }
+  return null;
+}
+
+// Helper: Generate Video using Veo
+async function generateVideoInternal(prompt) {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Use 'veo-3.1-fast-generate-preview' for general video tasks
+  const model = 'veo-3.1-fast-generate-preview';
+  
+  let operation = await ai.models.generateVideos({
+    model: model,
+    prompt: prompt,
+    config: {
+      numberOfVideos: 1,
+      resolution: '720p', // Only 720p available currently for this model/tier in this example context
+      aspectRatio: '16:9'
+    }
+  });
+
+  // Polling loop for video generation
+  while (!operation.done) {
+    await new Promise(resolve => setTimeout(resolve, 5000));
+    operation = await ai.operations.getVideosOperation({operation: operation});
+  }
+
+  const downloadLink = operation.response?.generatedVideos?.[0]?.video?.uri;
+  if (downloadLink) {
+     // Must append API key to download
+     const vidRes = await fetch(`${downloadLink}&key=${process.env.API_KEY}`);
+     if (!vidRes.ok) throw new Error("Failed to download generated video");
+     
+     const arrayBuffer = await vidRes.arrayBuffer();
+     const outFilename = `ai_chat_video_${uuidv4()}.mp4`;
+     const outputPath = path.join(PROCESSED_DIR, outFilename);
+     fs.writeFileSync(outputPath, Buffer.from(arrayBuffer));
+     return `/api/processed/${outFilename}`;
   }
   return null;
 }
@@ -335,19 +371,32 @@ app.post('/api/ai/chat', async (req, res) => {
     const userLang = lang === 'zh' ? 'zh' : 'en';
     const systemInstruction = instructions[userLang][currentSession.mode] || instructions[userLang]['general'];
 
-    // Define Tools (Image Generation)
+    // Define Tools (Image AND Video Generation)
     const tools = [{
-      functionDeclarations: [{
-        name: "generate_image",
-        description: "Generate an image based on a prompt. Use this tool when the user explicitly asks to generate, create, or draw an image.",
-        parameters: {
-          type: Type.OBJECT,
-          properties: {
-            prompt: { type: Type.STRING, description: "The detailed description of the image to generate" }
-          },
-          required: ["prompt"]
+      functionDeclarations: [
+        {
+          name: "generate_image",
+          description: "Generate an image based on a prompt. Use this tool when the user explicitly asks to generate, create, or draw an image.",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              prompt: { type: Type.STRING, description: "The detailed description of the image to generate" }
+            },
+            required: ["prompt"]
+          }
+        },
+        {
+          name: "generate_video",
+          description: "Generate a video based on a prompt. Use this tool when the user explicitly asks to generate, create, or animate a video/movie.",
+          parameters: {
+            type: Type.OBJECT,
+            properties: {
+              prompt: { type: Type.STRING, description: "The detailed description of the video to generate" }
+            },
+            required: ["prompt"]
+          }
         }
-      }]
+      ]
     }];
 
     // Prepare content parts (Text + Attachments)
@@ -392,6 +441,7 @@ app.post('/api/ai/chat', async (req, res) => {
       // Check for Function Calls
       if (chunk.functionCalls && chunk.functionCalls.length > 0) {
           const call = chunk.functionCalls[0];
+          
           if (call.name === 'generate_image') {
               const prompt = call.args.prompt;
               const msg = userLang === 'zh' ? "\n[系统: 正在生成图像，请稍候...]\n" : "\n[SYSTEM: Generating image...]\n";
@@ -405,6 +455,23 @@ app.post('/api/ai/chat', async (req, res) => {
                       fullResponseText += imgMarkdown;
                   } else {
                       res.write("\n[SYSTEM ERROR: Image generation failed]\n");
+                  }
+              } catch (err) {
+                  res.write(`\n[SYSTEM ERROR: ${err.message}]\n`);
+              }
+          } else if (call.name === 'generate_video') {
+              const prompt = call.args.prompt;
+              const msg = userLang === 'zh' ? "\n[系统: 正在生成视频 (Veo)，可能需要几分钟...]\n" : "\n[SYSTEM: Generating video (Veo), this may take a while...]\n";
+              res.write(msg);
+              
+              try {
+                  const videoUrl = await generateVideoInternal(prompt);
+                  if (videoUrl) {
+                      const vidMarkdown = `\n![Generated Video](${videoUrl})\n`;
+                      res.write(vidMarkdown);
+                      fullResponseText += vidMarkdown;
+                  } else {
+                      res.write("\n[SYSTEM ERROR: Video generation failed]\n");
                   }
               } catch (err) {
                   res.write(`\n[SYSTEM ERROR: ${err.message}]\n`);
