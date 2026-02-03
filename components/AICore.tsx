@@ -26,6 +26,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
   const t = {
     en: {
+      aiCoreTitle: "AI_CORE",
       newChat: "NEW SESSION",
       placeholder: "Broadcast message to core...",
       modelFlash: "GEMINI 3 FLASH",
@@ -49,6 +50,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       ai: "AI"
     },
     zh: {
+      aiCoreTitle: "AI 核心",
       newChat: "新建会话",
       placeholder: "输入指令或提问...",
       modelFlash: "GEMINI 3 FLASH",
@@ -373,7 +375,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
         {/* Header */}
         <div className="h-14 border-b border-cyan-900/30 bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-6 z-30">
            <div className="flex items-center gap-2">
-              <span className="text-cyan-400 font-tech text-lg">AI_CORE</span>
+              <span className="text-cyan-400 font-tech text-lg">{t.aiCoreTitle}</span>
               <span className="text-slate-600 font-thin">/</span>
               <select value={model} onChange={(e) => setModel(e.target.value as AIModelVersion)} className="bg-transparent text-xs font-code text-slate-300 focus:outline-none uppercase cursor-pointer hover:text-cyan-400">
                  <option value="gemini-3-flash-preview">{t.modelFlash}</option>
