@@ -8,7 +8,7 @@ import path from 'path';
 import { v4 as uuidv4 } from 'uuid';
 import { fileURLToPath } from 'url';
 import bmp from 'bmp-js'; 
-import { GoogleGenAI, Modality } from "@google/genai";
+import { GoogleGenAI, Modality, Type } from "@google/genai";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -237,6 +237,34 @@ async function getFileParts(attachments) {
     return parts;
 }
 
+// Helper: Generate Image using Gemini 2.5 Flash Image (Nano Banana)
+async function generateImageInternal(prompt) {
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  // Using gemini-2.5-flash-image for generation as requested in specs
+  const response = await ai.models.generateContent({
+    model: 'gemini-2.5-flash-image',
+    contents: { parts: [{ text: prompt }] },
+  });
+
+  let outBase64 = null;
+  if (response.candidates && response.candidates[0].content && response.candidates[0].content.parts) {
+      for (const part of response.candidates[0].content.parts) {
+          if (part.inlineData) {
+              outBase64 = part.inlineData.data;
+              break;
+          }
+      }
+  }
+
+  if (outBase64) {
+      const outFilename = `ai_chat_gen_${uuidv4()}.png`;
+      const outputPath = path.join(PROCESSED_DIR, outFilename);
+      fs.writeFileSync(outputPath, Buffer.from(outBase64, 'base64'));
+      return `/api/processed/${outFilename}`;
+  }
+  return null;
+}
+
 // 1. Session Management
 app.get('/api/ai/sessions', (req, res) => {
     const sessionList = Array.from(sessions.values()).map(s => ({
@@ -307,6 +335,21 @@ app.post('/api/ai/chat', async (req, res) => {
     const userLang = lang === 'zh' ? 'zh' : 'en';
     const systemInstruction = instructions[userLang][currentSession.mode] || instructions[userLang]['general'];
 
+    // Define Tools (Image Generation)
+    const tools = [{
+      functionDeclarations: [{
+        name: "generate_image",
+        description: "Generate an image based on a prompt. Use this tool when the user explicitly asks to generate, create, or draw an image.",
+        parameters: {
+          type: Type.OBJECT,
+          properties: {
+            prompt: { type: Type.STRING, description: "The detailed description of the image to generate" }
+          },
+          required: ["prompt"]
+        }
+      }]
+    }];
+
     // Prepare content parts (Text + Attachments)
     const newParts = [];
     if (message) newParts.push({ text: message });
@@ -326,7 +369,10 @@ app.post('/api/ai/chat', async (req, res) => {
     const chat = ai.chats.create({
       model: chatModel,
       history: historyPayload,
-      config: { systemInstruction },
+      config: { 
+        systemInstruction,
+        tools: tools 
+      },
     });
 
     // Save User Turn to Session
@@ -338,12 +384,34 @@ app.post('/api/ai/chat', async (req, res) => {
         }
     }
 
-    // FIX: Pass parts as `message` property (string | Part[])
     const result = await chat.sendMessageStream({ message: newParts });
     
     let fullResponseText = '';
 
     for await (const chunk of result) {
+      // Check for Function Calls
+      if (chunk.functionCalls && chunk.functionCalls.length > 0) {
+          const call = chunk.functionCalls[0];
+          if (call.name === 'generate_image') {
+              const prompt = call.args.prompt;
+              const msg = userLang === 'zh' ? "\n[系统: 正在生成图像，请稍候...]\n" : "\n[SYSTEM: Generating image...]\n";
+              res.write(msg);
+              
+              try {
+                  const imageUrl = await generateImageInternal(prompt);
+                  if (imageUrl) {
+                      const imgMarkdown = `\n![Generated Image](${imageUrl})\n`;
+                      res.write(imgMarkdown);
+                      fullResponseText += imgMarkdown;
+                  } else {
+                      res.write("\n[SYSTEM ERROR: Image generation failed]\n");
+                  }
+              } catch (err) {
+                  res.write(`\n[SYSTEM ERROR: ${err.message}]\n`);
+              }
+          }
+      }
+
       if (chunk.text) {
         res.write(chunk.text);
         fullResponseText += chunk.text;

@@ -267,10 +267,13 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   // --- TTS ---
   const playTTS = async (text: string) => {
       try {
+          // Strip Markdown images from TTS
+          const cleanText = text.replace(/!\[.*?\]\(.*?\)/g, '');
+          
           const res = await fetch('/api/ai/tts', { 
               method: 'POST', 
               headers: { 'Content-Type': 'application/json' }, 
-              body: JSON.stringify({ text }) 
+              body: JSON.stringify({ text: cleanText }) 
           });
           const data = await res.json();
           if (data.audio) {
@@ -278,6 +281,24 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               audio.play();
           }
       } catch (e) { console.error(e); }
+  };
+
+  // --- Message Renderer with Markdown Image Support ---
+  const renderMessageContent = (text: string) => {
+      // Regex to find ![alt](url)
+      const parts = text.split(/(!\[.*?\]\(.*?\))/g);
+      return parts.map((part, index) => {
+          const imgMatch = part.match(/!\[(.*?)\]\((.*?)\)/);
+          if (imgMatch) {
+              return (
+                  <div key={index} className="my-2 rounded-lg overflow-hidden border border-slate-600 shadow-lg">
+                      <img src={imgMatch[2]} alt={imgMatch[1]} className="w-full max-h-64 object-contain bg-black/20" />
+                      <div className="bg-slate-900/50 p-1 text-[10px] text-slate-500 font-code text-center">GENERATED_ASSET</div>
+                  </div>
+              );
+          }
+          return <span key={index}>{part}</span>;
+      });
   };
 
   // --- Render Helpers ---
@@ -379,7 +400,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                        )}
 
                        <div className={`p-4 text-sm font-sans leading-relaxed shadow-lg whitespace-pre-wrap ${msg.role === 'user' ? 'bg-cyan-950/30 border border-cyan-500/20 text-cyan-100 rounded-bl-xl' : 'bg-slate-900/80 border border-slate-700 text-slate-300 rounded-br-xl'}`}>
-                          {msg.isThinking ? <span className="animate-pulse text-purple-400">{t.processing}</span> : msg.text}
+                          {msg.isThinking ? <span className="animate-pulse text-purple-400">{t.processing}</span> : renderMessageContent(msg.text)}
                        </div>
                        
                        {msg.role === 'model' && !msg.isThinking && (
