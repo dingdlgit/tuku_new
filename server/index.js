@@ -206,6 +206,56 @@ app.post('/api/process', async (req, res) => {
   }
 });
 
+// --- AI CHAT CORE (STREAMING) ---
+app.post('/api/ai-chat', async (req, res) => {
+  if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
+  
+  const { message, history, model } = req.body;
+  
+  // Set headers for streaming
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Transfer-Encoding', 'chunked');
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Use the chat interface to maintain history properly if needed,
+    // or use generateContentStream with history manually constructed in contents.
+    // Here we use chat.sendMessageStream for better conversational context management.
+    
+    const chatModel = model || 'gemini-3-flash-preview';
+    
+    // Construct chat history for the SDK
+    // SDK expects: { role: 'user' | 'model', parts: [{ text: string }] }
+    // The incoming `history` body should follow this or be mapped.
+    // Excluding the *current* message from history as sendMessage takes it separately.
+    const historyPayload = history ? history.slice(0, -1) : []; 
+
+    const chat = ai.chats.create({
+      model: chatModel,
+      history: historyPayload,
+      config: {
+        systemInstruction: "You are TuKu AI Core, a helpful and intelligent assistant in a cyberpunk interface. Keep answers concise and technical where appropriate.",
+      },
+    });
+
+    const result = await chat.sendMessageStream({ message: message });
+    
+    for await (const chunk of result) {
+      if (chunk.text) {
+        res.write(chunk.text);
+      }
+    }
+    
+    res.end();
+
+  } catch (error) {
+    console.error("AI Chat Error:", error);
+    res.write("\n[SYSTEM ERROR: Neural Link Interrupted]");
+    res.end();
+  }
+});
+
+
 // --- AI PROCESSING (VISION / GEN / VEO) ---
 app.post('/api/ai-process', async (req, res) => {
   if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });

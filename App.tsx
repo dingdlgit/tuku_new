@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Dropzone } from './components/Dropzone';
 import { Controls } from './components/Controls';
 import { StockDashboard } from './components/StockDashboard';
+import { AICore } from './components/AICore';
 import { ImageFormat, ProcessOptions, UploadResponse, ProcessResponse, Language, RawPixelFormat } from './types';
 
 const defaultOptions: ProcessOptions = {
@@ -27,7 +28,7 @@ const defaultOptions: ProcessOptions = {
   aiPrompt: ''
 };
 
-type AppMode = 'image' | 'data';
+type AppMode = 'image' | 'data' | 'ai';
 
 function App() {
   const [lang, setLang] = useState<Language>('en');
@@ -65,6 +66,7 @@ function App() {
       auto: "AUTO",
       modeImage: "IMAGE_CORE",
       modeData: "DATA_CORE",
+      modeAI: "AI_CORE",
       enterPwd: "ENTER ACCESS CODE",
       unlock: "UNLOCK",
       accessDenied: "ACCESS DENIED: MODULE UNDER CONSTRUCTION",
@@ -90,6 +92,7 @@ function App() {
       auto: "自动",
       modeImage: "图像核心",
       modeData: "数据核心",
+      modeAI: "AI 核心",
       enterPwd: "输入访问密钥",
       unlock: "解锁",
       accessDenied: "访问拒绝：功能正在新增中",
@@ -331,23 +334,28 @@ function App() {
       <header className="border-b border-cyan-900/50 bg-[#020617]/90 backdrop-blur-md py-4 px-6 shadow-[0_0_20px_rgba(6,182,212,0.1)] relative z-20">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex items-center gap-3 cursor-pointer group" onClick={handleReset}>
-            <div className={`w-10 h-10 border rounded-none flex items-center justify-center relative overflow-hidden transition-all duration-300 ${mode === 'image' ? 'bg-cyan-900/30 border-cyan-500' : 'bg-purple-900/30 border-purple-500'}`}>
-               <div className={`absolute inset-0 animate-pulse ${mode === 'image' ? 'bg-cyan-400/10' : 'bg-purple-400/10'}`}></div>
-               {mode === 'image' ? (
+            <div className={`w-10 h-10 border rounded-none flex items-center justify-center relative overflow-hidden transition-all duration-300 ${mode === 'image' ? 'bg-cyan-900/30 border-cyan-500' : mode === 'data' ? 'bg-purple-900/30 border-purple-500' : 'bg-emerald-900/30 border-emerald-500'}`}>
+               <div className={`absolute inset-0 animate-pulse ${mode === 'image' ? 'bg-cyan-400/10' : mode === 'data' ? 'bg-purple-400/10' : 'bg-emerald-400/10'}`}></div>
+               {mode === 'image' && (
                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-cyan-400 relative z-10"><path strokeLinecap="square" strokeLinejoin="miter" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" /></svg>
-               ) : (
+               )}
+               {mode === 'data' && (
                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-purple-400 relative z-10"><path strokeLinecap="square" strokeLinejoin="miter" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>
+               )}
+               {mode === 'ai' && (
+                 <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6 text-emerald-400 relative z-10"><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                )}
             </div>
             <div>
               <h1 className="text-2xl font-tech font-bold tracking-widest text-cyan-50 hover-glitch" data-text={t.appTitle}>{t.appTitle}</h1>
-              <div className={`h-0.5 w-full bg-gradient-to-r to-transparent transition-colors duration-500 ${mode === 'image' ? 'from-cyan-500' : 'from-purple-500'}`}></div>
+              <div className={`h-0.5 w-full bg-gradient-to-r to-transparent transition-colors duration-500 ${mode === 'image' ? 'from-cyan-500' : mode === 'data' ? 'from-purple-500' : 'from-emerald-500'}`}></div>
             </div>
           </div>
 
           <div className="hidden md:flex bg-slate-900 border border-slate-700 p-1 rounded-sm">
              <button onClick={() => handleModeSwitch('image')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'image' ? 'bg-cyan-600 text-white shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeImage}</button>
              <button onClick={() => handleModeSwitch('data')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'data' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeData}</button>
+             <button onClick={() => handleModeSwitch('ai')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'ai' ? 'bg-emerald-600 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeAI}</button>
           </div>
 
           <div className="flex items-center gap-6">
@@ -362,6 +370,8 @@ function App() {
           
           {mode === 'data' ? (
              <div className="max-w-7xl mx-auto h-full min-h-[calc(100vh-80px)]"><StockDashboard lang={lang} /></div>
+          ) : mode === 'ai' ? (
+             <div className="h-full min-h-[calc(100vh-80px)] bg-[#020617]"><AICore lang={lang} /></div>
           ) : (
             <div className="max-w-7xl mx-auto p-6 h-full min-h-[calc(100vh-80px)]">
               {!currentFile ? (

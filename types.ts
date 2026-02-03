@@ -1,4 +1,5 @@
 
+
 export type Language = 'en' | 'zh';
 
 export enum ImageFormat {
@@ -101,3 +102,17 @@ export interface StockAnalysisResult {
   risks: string[];
   history: OHLC[];
 }
+
+// --- AI Chat Core Types ---
+
+export type ChatRole = 'user' | 'model';
+
+export interface ChatMessage {
+  id: string;
+  role: ChatRole;
+  text: string;
+  timestamp: number;
+  isThinking?: boolean; // For loading state
+}
+
+export type AIModelVersion = 'gemini-3-flash-preview' | 'gemini-3-pro-preview';
