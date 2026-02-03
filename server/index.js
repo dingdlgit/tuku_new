@@ -274,7 +274,7 @@ app.delete('/api/ai/sessions/:id', (req, res) => {
 app.post('/api/ai/chat', async (req, res) => {
   if (!process.env.API_KEY) return res.status(500).json({ error: "API_KEY_MISSING" });
   
-  const { sessionId, message, attachments, model } = req.body;
+  const { sessionId, message, attachments, model, lang } = req.body;
   const session = sessions.get(sessionId);
   
   // Create temp session if ID not found
@@ -288,11 +288,24 @@ app.post('/api/ai/chat', async (req, res) => {
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const chatModel = model || 'gemini-3-flash-preview';
 
-    // System Instructions based on Mode
-    let systemInstruction = "You are TuKu AI Core. concise, cyber-tech style.";
-    if (currentSession.mode === 'coder') systemInstruction = "You are an Elite Senior Engineer. Provide efficient, secure, robust code. Use TypeScript/Python by default.";
-    if (currentSession.mode === 'analyst') systemInstruction = "You are a Data Scientist. Analyze data structures, patterns, and provide structured insights. Use JSON output where possible.";
-    if (currentSession.mode === 'creative') systemInstruction = "You are a Creative Director. Use vivid imagery, descriptive language, and think outside the box.";
+    // System Instructions based on Mode AND Language
+    const instructions = {
+        en: {
+            general: "You are TuKu AI Core, a helpful assistant in a cyberpunk interface. Keep answers concise.",
+            coder: "You are an Elite Senior Engineer. Provide efficient, secure, robust code. Use TypeScript/Python by default.",
+            analyst: "You are a Data Scientist. Analyze data structures, patterns, and provide structured insights. Use JSON output where possible.",
+            creative: "You are a Creative Director. Use vivid imagery, descriptive language, and think outside the box."
+        },
+        zh: {
+            general: "你是图酷 AI 核心 (TuKu AI Core)，一个运行在赛博朋克接口中的智能助手。请用中文回答，保持回答简洁、专业。",
+            coder: "你是一位精英高级工程师。请提供高效、安全、健壮的代码。默认使用 TypeScript/Python。请用中文解释技术细节。",
+            analyst: "你是一位数据科学家。分析数据结构、模式，并提供结构化的见解。尽可能使用 JSON 格式输出。请用中文回答。",
+            creative: "你是一位创意总监。请使用生动的意象、描述性语言，跳出思维定势。请用中文进行创作。"
+        }
+    };
+
+    const userLang = lang === 'zh' ? 'zh' : 'en';
+    const systemInstruction = instructions[userLang][currentSession.mode] || instructions[userLang]['general'];
 
     // Prepare content parts (Text + Attachments)
     const newParts = [];
@@ -325,7 +338,8 @@ app.post('/api/ai/chat', async (req, res) => {
         }
     }
 
-    const result = await chat.sendMessageStream({ parts: newParts });
+    // FIX: Pass parts as `message` property (string | Part[])
+    const result = await chat.sendMessageStream({ message: newParts });
     
     let fullResponseText = '';
 

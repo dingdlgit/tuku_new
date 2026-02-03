@@ -41,7 +41,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       listening: "LISTENING...",
       attach: "ATTACHED RES:",
       play: "PLAY",
-      tts: "READ ALOUD"
+      tts: "READ ALOUD",
+      emptyState: "AWAITING INPUT STREAM...",
+      processing: "PROCESSING...",
+      error: "Error: Neural Link Failed.",
+      user: "U",
+      ai: "AI"
     },
     zh: {
       newChat: "新建会话",
@@ -59,7 +64,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       listening: "正在聆听...",
       attach: "已挂载资源:",
       play: "播放",
-      tts: "朗读"
+      tts: "朗读",
+      emptyState: "等待输入信号...",
+      processing: "计算中...",
+      error: "错误：神经连接中断。",
+      user: "我",
+      ai: "AI"
     }
   }[lang];
 
@@ -156,7 +166,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
           sessionId: activeSessionId,
           message: textToSend,
           attachments: tempAttachments, // Send metadata + base64 if small
-          model: model
+          model: model,
+          lang: lang // Pass language setting
         })
       });
 
@@ -186,7 +197,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     } catch (error) {
       console.error(error);
       setMessages(prev => prev.map(msg => 
-        msg.id === aiMsgId ? { ...msg, text: "Error: Neural Link Failed.", isThinking: false } : msg
+        msg.id === aiMsgId ? { ...msg, text: t.error, isThinking: false } : msg
       ));
     } finally {
       setIsLoading(false);
@@ -340,14 +351,14 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                   <div className="absolute inset-2 border-b-2 border-purple-500 rounded-full animate-[spin_3s_linear_infinite]"></div>
                   <div className="absolute inset-0 flex items-center justify-center font-tech text-2xl text-white">AI</div>
                </div>
-               <div className="text-slate-500 font-code text-sm">AWAITING INPUT STREAM...</div>
+               <div className="text-slate-500 font-code text-sm uppercase">{t.emptyState}</div>
             </div>
           ) : (
             <div className="max-w-4xl mx-auto space-y-8">
                {messages.map((msg) => (
                  <div key={msg.id} className={`flex gap-4 ${msg.role === 'user' ? 'flex-row-reverse' : ''}`}>
                     <div className={`w-8 h-8 flex-shrink-0 flex items-center justify-center rounded-sm border ${msg.role === 'user' ? 'bg-cyan-900/20 border-cyan-500/50 text-cyan-400' : 'bg-purple-900/20 border-purple-500/50 text-purple-400'}`}>
-                       {msg.role === 'user' ? "U" : "AI"}
+                       {msg.role === 'user' ? t.user : t.ai}
                     </div>
                     
                     <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
@@ -368,7 +379,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                        )}
 
                        <div className={`p-4 text-sm font-sans leading-relaxed shadow-lg whitespace-pre-wrap ${msg.role === 'user' ? 'bg-cyan-950/30 border border-cyan-500/20 text-cyan-100 rounded-bl-xl' : 'bg-slate-900/80 border border-slate-700 text-slate-300 rounded-br-xl'}`}>
-                          {msg.isThinking ? <span className="animate-pulse text-purple-400">PROCESSING...</span> : msg.text}
+                          {msg.isThinking ? <span className="animate-pulse text-purple-400">{t.processing}</span> : msg.text}
                        </div>
                        
                        {msg.role === 'model' && !msg.isThinking && (
