@@ -49,7 +49,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       processing: "PROCESSING...",
       error: "Error: Neural Link Failed.",
       user: "U",
-      ai: "AI"
+      ai: "AI",
+      cost: "COST",
+      iq: "IQ",
+      speed: "SPD"
     },
     zh: {
       aiCoreTitle: "AI 核心",
@@ -75,7 +78,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       processing: "计算中...",
       error: "错误：神经连接中断。",
       user: "我",
-      ai: "AI"
+      ai: "AI",
+      cost: "成本",
+      iq: "智商",
+      speed: "速度"
     }
   }[lang];
 
@@ -84,6 +90,14 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       coder: t.modeCode,
       analyst: t.modeData,
       creative: t.modeCreate
+  };
+
+  // Model Metadata for UI
+  const modelMeta: Record<AIModelVersion, { cost: number; iq: number; speed: number; label?: string }> = {
+      'gemini-flash-lite-latest': { cost: 1, iq: 3, speed: 5, label: "BEST VALUE" },
+      'gemini-flash-latest':      { cost: 2, iq: 4, speed: 5, label: "FAST" },
+      'gemini-3-flash-preview':   { cost: 3, iq: 4, speed: 4, label: "BALANCED" },
+      'gemini-3-pro-preview':     { cost: 5, iq: 5, speed: 3, label: "MAX INTEL" }
   };
 
   // --- Session Management ---
@@ -330,6 +344,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   // --- Render Helpers ---
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
+  const currentMeta = modelMeta[model] || { cost: 0, iq: 0, speed: 0 };
+
   return (
     <div className="flex h-full bg-[#020617] text-slate-200 overflow-hidden font-sans relative">
       
@@ -377,18 +393,42 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       <div className="flex-1 flex flex-col relative bg-[url('https://www.transparenttextures.com/patterns/dark-matter.png')]">
         
         {/* Header */}
-        <div className="h-14 border-b border-cyan-900/30 bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-6 z-30">
-           <div className="flex items-center gap-2">
-              <span className="text-cyan-400 font-tech text-lg">{t.aiCoreTitle}</span>
-              <span className="text-slate-600 font-thin">/</span>
-              <select value={model} onChange={(e) => setModel(e.target.value as AIModelVersion)} className="bg-transparent text-xs font-code text-slate-300 focus:outline-none uppercase cursor-pointer hover:text-cyan-400">
-                 <option value="gemini-3-flash-preview">{t.modelFlash}</option>
-                 <option value="gemini-3-pro-preview">{t.modelPro}</option>
-                 <option value="gemini-flash-latest">{t.modelFlashLatest}</option>
-                 <option value="gemini-flash-lite-latest">{t.modelLite}</option>
-              </select>
+        <div className="h-16 md:h-14 border-b border-cyan-900/30 bg-slate-900/80 backdrop-blur-md flex flex-col md:flex-row items-start md:items-center justify-between px-4 md:px-6 z-30 py-2 md:py-0 gap-2 md:gap-0">
+           <div className="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-4 w-full md:w-auto">
+              <div className="flex items-center gap-2">
+                <span className="text-cyan-400 font-tech text-lg">{t.aiCoreTitle}</span>
+                <span className="text-slate-600 font-thin">/</span>
+                <select value={model} onChange={(e) => setModel(e.target.value as AIModelVersion)} className="bg-transparent text-xs font-code text-slate-300 focus:outline-none uppercase cursor-pointer hover:text-cyan-400 max-w-[150px] md:max-w-none">
+                   <option value="gemini-3-flash-preview">{t.modelFlash}</option>
+                   <option value="gemini-3-pro-preview">{t.modelPro}</option>
+                   <option value="gemini-flash-latest">{t.modelFlashLatest}</option>
+                   <option value="gemini-flash-lite-latest">{t.modelLite}</option>
+                </select>
+              </div>
+              
+              {/* Stats Badge */}
+              <div className="flex items-center gap-3 bg-black/20 px-2 py-1 rounded border border-white/5">
+                 <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-slate-500 font-code uppercase">{t.cost}</span>
+                    <div className="flex gap-0.5">
+                       {[...Array(5)].map((_, i) => (
+                          <div key={i} className={`w-1 h-2 rounded-sm ${i < currentMeta.cost ? 'bg-emerald-500' : 'bg-slate-800'}`}></div>
+                       ))}
+                    </div>
+                 </div>
+                 <div className="flex items-center gap-1">
+                    <span className="text-[9px] text-slate-500 font-code uppercase">{t.iq}</span>
+                    <div className="flex gap-0.5">
+                       {[...Array(5)].map((_, i) => (
+                          <div key={i} className={`w-1 h-2 rounded-sm ${i < currentMeta.iq ? 'bg-purple-500' : 'bg-slate-800'}`}></div>
+                       ))}
+                    </div>
+                 </div>
+                 {currentMeta.label && <span className="text-[9px] font-bold text-cyan-400 bg-cyan-900/30 px-1 rounded">{currentMeta.label}</span>}
+              </div>
            </div>
-           <div className="flex gap-4">
+           
+           <div className="hidden md:flex gap-4 self-center">
               {currentSessionId && <span className="text-xs font-code text-slate-500 uppercase border px-2 py-0.5 border-slate-700 rounded-full">{sessions.find(s=>s.id===currentSessionId)?.mode} MODE</span>}
            </div>
         </div>
