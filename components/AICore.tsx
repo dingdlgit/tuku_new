@@ -109,17 +109,66 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     fetchSessions();
   }, []);
 
+  // Sync History when session ID changes
+  useEffect(() => {
+      if (currentSessionId) {
+          loadSessionHistory(currentSessionId);
+      }
+  }, [currentSessionId]);
+
   const fetchSessions = async () => {
     try {
       const res = await fetch('/api/ai/sessions');
       const data = await res.json();
       setSessions(data);
-      if (data.length > 0 && !currentSessionId) {
-          // Don't auto-select to allow "Fresh Start", or select first
-          // setCurrentSessionId(data[0].id);
-      }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const loadSessionHistory = async (id: string) => {
+    // Don't set main loading state to avoid UI blocking, just clear/load
+    setMessages([]); 
+    try {
+        const res = await fetch(`/api/ai/sessions/${id}`);
+        if (!res.ok) return;
+        const sessionData = await res.json();
+        
+        // Convert Backend History (Gemini/Unified Format) to Frontend Messages
+        if (sessionData.history && Array.isArray(sessionData.history)) {
+            const convertedMessages: ChatMessage[] = sessionData.history.map((h: any, index: number) => {
+                let text = "";
+                const atts: AIAttachment[] = [];
+                
+                if (h.parts) {
+                    h.parts.forEach((p: any) => {
+                        if (p.text) text += p.text;
+                        // Attempt to reconstruct attachments if inlineData is present (base64)
+                        if (p.inlineData) {
+                            atts.push({
+                                id: `hist-att-${index}-${Date.now()}-${Math.random()}`,
+                                type: 'image', // Default assumption
+                                url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`,
+                                filename: 'history_asset',
+                                mimeType: p.inlineData.mimeType,
+                                data: p.inlineData.data
+                            });
+                        }
+                    });
+                }
+
+                return {
+                    id: `msg-hist-${index}-${Date.now()}`,
+                    role: h.role === 'model' ? 'model' : 'user',
+                    text: text,
+                    timestamp: Date.now(), // Mock timestamp as it's not strictly persisted in simplified history
+                    attachments: atts.length > 0 ? atts : undefined
+                };
+            });
+            setMessages(convertedMessages);
+        }
+    } catch (e) {
+        console.error("Failed to load history", e);
     }
   };
 
@@ -132,8 +181,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     const newSession = await res.json();
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
-    setMessages([]);
-    setAttachments([]);
+    // Messages cleared via useEffect trigger
   };
 
   const deleteSession = async (id: string, e: React.MouseEvent) => {
@@ -366,7 +414,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
            <div className="hidden md:block text-[10px] text-slate-500 font-code uppercase tracking-widest mb-2 px-2">{t.history}</div>
            <div className="space-y-1">
              {sessions.map(s => (
-               <div key={s.id} onClick={() => { setCurrentSessionId(s.id); setMessages([]); }} className={`group relative p-2 md:p-3 cursor-pointer border-l-2 transition-all ${currentSessionId === s.id ? 'bg-slate-800 border-cyan-500 text-cyan-100' : 'border-transparent text-slate-500 hover:bg-slate-800/50'}`}>
+               <div key={s.id} onClick={() => setCurrentSessionId(s.id)} className={`group relative p-2 md:p-3 cursor-pointer border-l-2 transition-all ${currentSessionId === s.id ? 'bg-slate-800 border-cyan-500 text-cyan-100' : 'border-transparent text-slate-500 hover:bg-slate-800/50'}`}>
                   <div className="flex justify-between items-center">
                       <div className="font-bold text-xs truncate w-full pr-6">{s.title || "Untitled Link"}</div>
                       <button onClick={(e) => deleteSession(s.id, e)} className="absolute right-2 opacity-0 group-hover:opacity-100 text-slate-600 hover:text-rose-500">×</button>

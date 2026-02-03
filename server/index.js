@@ -315,6 +315,13 @@ app.get('/api/ai/sessions', (req, res) => {
     res.json(sessionList);
 });
 
+// Added Endpoint: Get Single Session (with history)
+app.get('/api/ai/sessions/:id', (req, res) => {
+    const session = sessions.get(req.params.id);
+    if (!session) return res.status(404).json({ error: "Session not found" });
+    res.json(session);
+});
+
 app.post('/api/ai/sessions', (req, res) => {
     const { mode } = req.body;
     const id = uuidv4();
