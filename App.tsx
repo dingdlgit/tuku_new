@@ -33,9 +33,13 @@ type AppMode = 'image' | 'data' | 'ai';
 function App() {
   const [lang, setLang] = useState<Language>('en');
   const [mode, setMode] = useState<AppMode>('image');
+  
+  // Security States
   const [dataUnlocked, setDataUnlocked] = useState(false);
+  const [aiUnlocked, setAiUnlocked] = useState(false); // Added AI Lock
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [passwordInput, setPasswordInput] = useState('');
+  const [unlockTarget, setUnlockTarget] = useState<'data' | 'ai' | null>(null); // Track what we are unlocking
 
   // Image Core States
   const [currentFile, setCurrentFile] = useState<UploadResponse | null>(null);
@@ -69,7 +73,7 @@ function App() {
       modeAI: "AI_CORE",
       enterPwd: "ENTER ACCESS CODE",
       unlock: "UNLOCK",
-      accessDenied: "ACCESS DENIED: MODULE UNDER CONSTRUCTION",
+      accessDenied: "ACCESS DENIED: INVALID TOKEN",
       aiResult: "NEURAL ANALYSIS",
       error: "SYSTEM ALERT"
     },
@@ -95,7 +99,7 @@ function App() {
       modeAI: "AI 核心",
       enterPwd: "输入访问密钥",
       unlock: "解锁",
-      accessDenied: "访问拒绝：功能正在新增中",
+      accessDenied: "访问拒绝：无效的密钥",
       aiResult: "神经分析结果",
       error: "系统警报"
     }
@@ -287,6 +291,10 @@ function App() {
 
   const handleModeSwitch = (newMode: AppMode) => {
     if (newMode === 'data' && !dataUnlocked) {
+      setUnlockTarget('data');
+      setShowPasswordModal(true);
+    } else if (newMode === 'ai' && !aiUnlocked) {
+      setUnlockTarget('ai');
       setShowPasswordModal(true);
     } else {
       setMode(newMode);
@@ -294,14 +302,19 @@ function App() {
   };
 
   const handleUnlock = () => {
-    if (passwordInput === '666888') {
+    if (unlockTarget === 'data' && passwordInput === '666888') {
       setDataUnlocked(true);
       setShowPasswordModal(false);
       setMode('data');
       setPasswordInput('');
+    } else if (unlockTarget === 'ai' && passwordInput === '666666') {
+      setAiUnlocked(true);
+      setShowPasswordModal(false);
+      setMode('ai');
+      setPasswordInput('');
     } else {
       alert(t.accessDenied);
-      setShowPasswordModal(false);
+      setShowPasswordModal(false); // keep open? usually better to keep open for retry, but follow pattern
       setPasswordInput('');
     }
   };
@@ -311,9 +324,9 @@ function App() {
       {/* Password Modal */}
       {showPasswordModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-           <div className="bg-slate-900 border border-cyan-500/50 p-8 max-w-sm w-full shadow-[0_0_50px_rgba(6,182,212,0.3)] relative overflow-hidden">
-               <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-cyan-500 via-purple-500 to-cyan-500 animate-pulse"></div>
-               <h3 className="text-xl font-tech text-cyan-400 mb-6 text-center tracking-widest">{t.enterPwd}</h3>
+           <div className={`bg-slate-900 border p-8 max-w-sm w-full shadow-[0_0_50px_rgba(0,0,0,0.5)] relative overflow-hidden ${unlockTarget === 'ai' ? 'border-emerald-500/50 shadow-[0_0_50px_rgba(16,185,129,0.3)]' : 'border-cyan-500/50 shadow-[0_0_50px_rgba(6,182,212,0.3)]'}`}>
+               <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r animate-pulse ${unlockTarget === 'ai' ? 'from-emerald-500 via-green-500 to-emerald-500' : 'from-cyan-500 via-purple-500 to-cyan-500'}`}></div>
+               <h3 className={`text-xl font-tech mb-6 text-center tracking-widest ${unlockTarget === 'ai' ? 'text-emerald-400' : 'text-cyan-400'}`}>{t.enterPwd}</h3>
                <input 
                  type="password" 
                  value={passwordInput}
@@ -323,8 +336,8 @@ function App() {
                  onKeyDown={(e) => e.key === 'Enter' && handleUnlock()}
                />
                <div className="flex gap-4">
-                  <button onClick={() => setShowPasswordModal(false)} className="flex-1 py-2 font-code text-slate-500 hover:text-white border border-transparent hover:border-slate-500">CANCEL</button>
-                  <button onClick={handleUnlock} className="flex-1 py-2 bg-cyan-600 hover:bg-cyan-500 text-white font-tech tracking-wider clip-button">{t.unlock}</button>
+                  <button onClick={() => { setShowPasswordModal(false); setUnlockTarget(null); }} className="flex-1 py-2 font-code text-slate-500 hover:text-white border border-transparent hover:border-slate-500">CANCEL</button>
+                  <button onClick={handleUnlock} className={`flex-1 py-2 text-white font-tech tracking-wider clip-button ${unlockTarget === 'ai' ? 'bg-emerald-600 hover:bg-emerald-500' : 'bg-cyan-600 hover:bg-cyan-500'}`}>{t.unlock}</button>
                </div>
            </div>
         </div>
@@ -353,9 +366,9 @@ function App() {
           </div>
 
           <div className="hidden md:flex bg-slate-900 border border-slate-700 p-1 rounded-sm">
+             <button onClick={() => handleModeSwitch('ai')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'ai' ? 'bg-emerald-600 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeAI}</button>
              <button onClick={() => handleModeSwitch('image')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'image' ? 'bg-cyan-600 text-white shadow-[0_0_10px_rgba(6,182,212,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeImage}</button>
              <button onClick={() => handleModeSwitch('data')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'data' ? 'bg-purple-600 text-white shadow-[0_0_10px_rgba(168,85,247,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeData}</button>
-             <button onClick={() => handleModeSwitch('ai')} className={`px-4 py-1 text-xs font-tech tracking-wider transition-all ${mode === 'ai' ? 'bg-emerald-600 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'text-slate-500 hover:text-slate-300'}`}>{t.modeAI}</button>
           </div>
 
           <div className="flex items-center gap-6">
