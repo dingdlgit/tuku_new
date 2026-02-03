@@ -93,11 +93,15 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   };
 
   // Model Metadata for UI
-  const modelMeta: Record<AIModelVersion, { cost: number; iq: number; speed: number; label?: string }> = {
-      'gemini-flash-lite-latest': { cost: 1, iq: 3, speed: 5, label: "BEST VALUE" },
+  const modelMeta: Record<string, { cost: number; iq: number; speed: number; label?: string }> = {
+      'gemini-flash-lite-latest': { cost: 1, iq: 3, speed: 5, label: "VALUE" },
       'gemini-flash-latest':      { cost: 2, iq: 4, speed: 5, label: "FAST" },
       'gemini-3-flash-preview':   { cost: 3, iq: 4, speed: 4, label: "BALANCED" },
-      'gemini-3-pro-preview':     { cost: 5, iq: 5, speed: 3, label: "MAX INTEL" }
+      'gemini-3-pro-preview':     { cost: 5, iq: 5, speed: 3, label: "MAX INTEL" },
+      'gpt-4o':                   { cost: 5, iq: 5, speed: 4, label: "OPENAI" },
+      'gpt-4-turbo':              { cost: 4, iq: 5, speed: 4, label: "LEGACY" },
+      'llama-3-local':            { cost: 0, iq: 3, speed: 5, label: "LOCAL" },
+      'stable-diffusion-xl':      { cost: 0, iq: 0, speed: 2, label: "IMAGE ONLY" }
   };
 
   // --- Session Management ---
@@ -398,11 +402,21 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               <div className="flex items-center gap-2">
                 <span className="text-cyan-400 font-tech text-lg">{t.aiCoreTitle}</span>
                 <span className="text-slate-600 font-thin">/</span>
-                <select value={model} onChange={(e) => setModel(e.target.value as AIModelVersion)} className="bg-transparent text-xs font-code text-slate-300 focus:outline-none uppercase cursor-pointer hover:text-cyan-400 max-w-[150px] md:max-w-none">
-                   <option value="gemini-3-flash-preview">{t.modelFlash}</option>
-                   <option value="gemini-3-pro-preview">{t.modelPro}</option>
-                   <option value="gemini-flash-latest">{t.modelFlashLatest}</option>
-                   <option value="gemini-flash-lite-latest">{t.modelLite}</option>
+                <select value={model} onChange={(e) => setModel(e.target.value as AIModelVersion)} className="bg-transparent text-xs font-code text-slate-300 focus:outline-none uppercase cursor-pointer hover:text-cyan-400 max-w-[200px] md:max-w-none">
+                   <optgroup label="GOOGLE CLOUD" className="bg-slate-900 text-cyan-400">
+                     <option value="gemini-3-flash-preview">{t.modelFlash}</option>
+                     <option value="gemini-3-pro-preview">{t.modelPro}</option>
+                     <option value="gemini-flash-latest">{t.modelFlashLatest}</option>
+                     <option value="gemini-flash-lite-latest">{t.modelLite}</option>
+                   </optgroup>
+                   <optgroup label="OPENAI" className="bg-slate-900 text-green-400">
+                     <option value="gpt-4o">GPT-4o (OMNI)</option>
+                     <option value="gpt-4-turbo">GPT-4 TURBO</option>
+                   </optgroup>
+                   <optgroup label="LOCAL / OPEN SOURCE" className="bg-slate-900 text-amber-400">
+                     <option value="llama-3-local">LLaMA 3 (LOCAL)</option>
+                     <option value="stable-diffusion-xl">STABLE DIFFUSION (IMAGE)</option>
+                   </optgroup>
                 </select>
               </div>
               

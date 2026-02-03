@@ -138,7 +138,15 @@ export interface ChatSession {
 }
 
 export type AIModelVersion = 
+  // Google
   | 'gemini-3-flash-preview' 
   | 'gemini-3-pro-preview' 
   | 'gemini-flash-latest' 
-  | 'gemini-flash-lite-latest';
+  | 'gemini-flash-lite-latest'
+  // OpenAI
+  | 'gpt-4o'
+  | 'gpt-4-turbo'
+  // Open Source / Local
+  | 'llama-3-local'
+  | 'mistral-local'
+  | 'stable-diffusion-xl';
