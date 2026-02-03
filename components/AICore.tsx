@@ -31,6 +31,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       placeholder: "Broadcast message to core...",
       modelFlash: "GEMINI 3 FLASH",
       modelPro: "GEMINI 3 PRO",
+      modelFlashLatest: "GEMINI FLASH",
+      modelLite: "GEMINI LITE",
       history: "SESSIONS",
       modes: "WORK MODE",
       modeGen: "GENERAL",
@@ -55,6 +57,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       placeholder: "输入指令或提问...",
       modelFlash: "GEMINI 3 FLASH",
       modelPro: "GEMINI 3 PRO",
+      modelFlashLatest: "GEMINI FLASH",
+      modelLite: "GEMINI LITE",
       history: "历史会话",
       modes: "工作模式",
       modeGen: "通用助手",
@@ -380,6 +384,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               <select value={model} onChange={(e) => setModel(e.target.value as AIModelVersion)} className="bg-transparent text-xs font-code text-slate-300 focus:outline-none uppercase cursor-pointer hover:text-cyan-400">
                  <option value="gemini-3-flash-preview">{t.modelFlash}</option>
                  <option value="gemini-3-pro-preview">{t.modelPro}</option>
+                 <option value="gemini-flash-latest">{t.modelFlashLatest}</option>
+                 <option value="gemini-flash-lite-latest">{t.modelLite}</option>
               </select>
            </div>
            <div className="flex gap-4">

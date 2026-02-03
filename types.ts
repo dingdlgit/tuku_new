@@ -1,5 +1,4 @@
 
-
 export type Language = 'en' | 'zh';
 
 export enum ImageFormat {
@@ -138,4 +137,8 @@ export interface ChatSession {
   preview: string;
 }
 
-export type AIModelVersion = 'gemini-3-flash-preview' | 'gemini-3-pro-preview';
+export type AIModelVersion = 
+  | 'gemini-3-flash-preview' 
+  | 'gemini-3-pro-preview' 
+  | 'gemini-flash-latest' 
+  | 'gemini-flash-lite-latest';
