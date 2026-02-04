@@ -28,12 +28,18 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   const isSendingRef = useRef(false);
 
   // Custom Alert State
-  const [alertModal, setAlertModal] = useState<{show: boolean, title: string, message: string, type: 'error' | 'info'}>({
+  const [alertModal, setAlertModal] = useState<{
+    show: boolean, 
+    title: string, 
+    message: string, 
+    type: 'error' | 'info',
+    key?: 'fileValidation' | 'micPermission'
+  }>({
     show: false, title: '', message: '', type: 'error'
   });
 
-  const showAlert = (title: string, message: string, type: 'error' | 'info' = 'error') => {
-      setAlertModal({ show: true, title, message, type });
+  const showAlert = (title: string, message: string, type: 'error' | 'info' = 'error', key?: 'fileValidation' | 'micPermission') => {
+      setAlertModal({ show: true, title, message, type, key });
   };
 
   const t = {
@@ -327,8 +333,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
           const isValidExt = validExts.some(ext => file.name.toLowerCase().endsWith(ext));
 
           if (!isValidType && !isValidExt) {
-              // Custom Alert instead of window.alert
-              showAlert(t.fileError, t.fileHint, 'error');
+              // Custom Alert with key for dynamic translation
+              showAlert(t.fileError, t.fileHint, 'error', 'fileValidation');
               if (fileInputRef.current) fileInputRef.current.value = '';
               return;
           }
@@ -382,7 +388,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
           mediaRecorder.start();
           setIsRecording(true);
       } catch (e) { 
-          showAlert(t.micError, t.micHint, 'error');
+          showAlert(t.micError, t.micHint, 'error', 'micPermission');
       }
   };
 
@@ -442,6 +448,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
   const currentMeta = modelMeta[model] || { cost: 0, iq: 0, speed: 0 };
 
+  // Determine current alert content dynamically based on lang
+  const currentAlertTitle = alertModal.key === 'fileValidation' ? t.fileError : (alertModal.key === 'micPermission' ? t.micError : alertModal.title);
+  const currentAlertMessage = alertModal.key === 'fileValidation' ? t.fileHint : (alertModal.key === 'micPermission' ? t.micHint : alertModal.message);
+
   return (
     <div className="flex h-full bg-[#020617] text-slate-200 overflow-hidden font-sans relative">
       
@@ -461,13 +471,13 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                       
                       <h3 className={`text-xl font-tech font-black uppercase tracking-widest mb-4 flex items-center gap-3 ${alertModal.type === 'error' ? 'text-rose-500' : 'text-cyan-400'}`}>
                           <span className="text-2xl">{alertModal.type === 'error' ? '⚠️' : 'ℹ️'}</span>
-                          {alertModal.title}
+                          {currentAlertTitle}
                       </h3>
                       
                       <div className={`h-px w-full mb-4 ${alertModal.type === 'error' ? 'bg-rose-900' : 'bg-cyan-900'}`}></div>
                       
                       <p className="font-code text-sm text-slate-300 leading-relaxed whitespace-pre-line mb-8">
-                          {alertModal.message}
+                          {currentAlertMessage}
                       </p>
                       
                       <button 
