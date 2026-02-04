@@ -27,6 +27,15 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   // FIX: Guard to prevent history loading from clearing active messages during a live chat stream
   const isSendingRef = useRef(false);
 
+  // Custom Alert State
+  const [alertModal, setAlertModal] = useState<{show: boolean, title: string, message: string, type: 'error' | 'info'}>({
+    show: false, title: '', message: '', type: 'error'
+  });
+
+  const showAlert = (title: string, message: string, type: 'error' | 'info' = 'error') => {
+      setAlertModal({ show: true, title, message, type });
+  };
+
   const t = {
     en: {
       aiCoreTitle: "AI_CORE",
@@ -56,8 +65,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       cost: "COST",
       iq: "IQ",
       speed: "SPD",
-      fileError: "ERROR: UNSUPPORTED FORMAT",
-      fileHint: "SUPPORTED: IMG, VIDEO, AUDIO, PDF, CODE/TXT"
+      fileError: "UNSUPPORTED FORMAT",
+      fileHint: "SUPPORTED: IMG, VIDEO, AUDIO, PDF, CODE/TXT",
+      micError: "MIC ACCESS DENIED",
+      micHint: "Please enable microphone permissions in your browser settings.",
+      ack: "ACKNOWLEDGE",
+      uploadFail: "UPLOAD FAILED"
     },
     zh: {
       aiCoreTitle: "AI 核心",
@@ -87,8 +100,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       cost: "成本",
       iq: "智商",
       speed: "速度",
-      fileError: "错误：不支持的文件格式",
-      fileHint: "支持格式：图片、视频、音频、PDF、代码/文本"
+      fileError: "不支持的文件格式",
+      fileHint: "支持格式：图片、视频、音频、PDF、代码/文本",
+      micError: "麦克风访问被拒绝",
+      micHint: "请在浏览器设置中允许使用麦克风。",
+      ack: "确认",
+      uploadFail: "上传失败"
     }
   }[lang];
 
@@ -310,7 +327,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
           const isValidExt = validExts.some(ext => file.name.toLowerCase().endsWith(ext));
 
           if (!isValidType && !isValidExt) {
-              alert(`${t.fileError}\n${t.fileHint}`);
+              // Custom Alert instead of window.alert
+              showAlert(t.fileError, t.fileHint, 'error');
               if (fileInputRef.current) fileInputRef.current.value = '';
               return;
           }
@@ -330,7 +348,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                   mimeType: data.mimeType || file.type
               };
               setAttachments(prev => [...prev, newAtt]);
-          } catch (e) { console.error(e); alert("Upload Failed"); }
+          } catch (e) { 
+              console.error(e); 
+              showAlert(t.uploadFail, "Please check console or server logs.", 'error'); 
+          }
       }
   };
 
@@ -360,7 +381,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
           mediaRecorder.start();
           setIsRecording(true);
-      } catch (e) { alert("Mic Access Denied"); }
+      } catch (e) { 
+          showAlert(t.micError, t.micHint, 'error');
+      }
   };
 
   const stopRecording = () => {
@@ -422,6 +445,47 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   return (
     <div className="flex h-full bg-[#020617] text-slate-200 overflow-hidden font-sans relative">
       
+      {/* --- CUSTOM ALERT MODAL --- */}
+      {alertModal.show && (
+          <div className="absolute inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+              <div className={`max-w-md w-full bg-slate-900 p-1 relative border-2 ${alertModal.type === 'error' ? 'border-rose-600 shadow-[0_0_40px_rgba(225,29,72,0.4)]' : 'border-cyan-500 shadow-[0_0_40px_rgba(6,182,212,0.4)]'}`}>
+                  {/* Decorative corners */}
+                  <div className={`absolute top-0 left-0 w-2 h-2 ${alertModal.type==='error'?'bg-rose-500':'bg-cyan-500'}`}></div>
+                  <div className={`absolute top-0 right-0 w-2 h-2 ${alertModal.type==='error'?'bg-rose-500':'bg-cyan-500'}`}></div>
+                  <div className={`absolute bottom-0 left-0 w-2 h-2 ${alertModal.type==='error'?'bg-rose-500':'bg-cyan-500'}`}></div>
+                  <div className={`absolute bottom-0 right-0 w-2 h-2 ${alertModal.type==='error'?'bg-rose-500':'bg-cyan-500'}`}></div>
+                  
+                  <div className="bg-[#020617] p-6 relative overflow-hidden">
+                      {/* Scanline bg */}
+                      <div className="absolute inset-0 opacity-10 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%] pointer-events-none"></div>
+                      
+                      <h3 className={`text-xl font-tech font-black uppercase tracking-widest mb-4 flex items-center gap-3 ${alertModal.type === 'error' ? 'text-rose-500' : 'text-cyan-400'}`}>
+                          <span className="text-2xl">{alertModal.type === 'error' ? '⚠️' : 'ℹ️'}</span>
+                          {alertModal.title}
+                      </h3>
+                      
+                      <div className={`h-px w-full mb-4 ${alertModal.type === 'error' ? 'bg-rose-900' : 'bg-cyan-900'}`}></div>
+                      
+                      <p className="font-code text-sm text-slate-300 leading-relaxed whitespace-pre-line mb-8">
+                          {alertModal.message}
+                      </p>
+                      
+                      <button 
+                        onClick={() => setAlertModal(prev => ({ ...prev, show: false }))}
+                        className={`w-full py-3 font-bold font-tech uppercase tracking-[0.2em] text-xs transition-all relative group overflow-hidden ${
+                          alertModal.type === 'error' 
+                          ? 'bg-rose-950 text-rose-500 border border-rose-800 hover:bg-rose-900 hover:text-rose-300' 
+                          : 'bg-cyan-950 text-cyan-500 border border-cyan-800 hover:bg-cyan-900 hover:text-cyan-300'
+                        }`}
+                      >
+                        <span className="relative z-10">{t.ack}</span>
+                        <div className={`absolute inset-0 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ${alertModal.type==='error'?'bg-rose-500/10':'bg-cyan-500/10'}`}></div>
+                      </button>
+                  </div>
+              </div>
+          </div>
+       )}
+
       {/* --- SIDEBAR --- */}
       <div className="w-16 md:w-64 flex flex-col bg-slate-900/50 border-r border-cyan-900/30 backdrop-blur-md z-20 transition-all">
         <div className="p-4 flex flex-col gap-2">
