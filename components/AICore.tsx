@@ -24,6 +24,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // FIX: Guard to prevent history loading from clearing active messages during a live chat stream
+  const isSendingRef = useRef(false);
+
   const t = {
     en: {
       aiCoreTitle: "AI_CORE",
@@ -111,7 +114,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
   // Sync History when session ID changes
   useEffect(() => {
-      if (currentSessionId) {
+      // FIX: Only load history if we are NOT currently sending a message
+      if (currentSessionId && !isSendingRef.current) {
           loadSessionHistory(currentSessionId);
       }
   }, [currentSessionId]);
@@ -127,14 +131,12 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   };
 
   const loadSessionHistory = async (id: string) => {
-    // Don't set main loading state to avoid UI blocking, just clear/load
     setMessages([]); 
     try {
         const res = await fetch(`/api/ai/sessions/${id}`);
         if (!res.ok) return;
         const sessionData = await res.json();
         
-        // Convert Backend History (Gemini/Unified Format) to Frontend Messages
         if (sessionData.history && Array.isArray(sessionData.history)) {
             const convertedMessages: ChatMessage[] = sessionData.history.map((h: any, index: number) => {
                 let text = "";
@@ -143,11 +145,10 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                 if (h.parts) {
                     h.parts.forEach((p: any) => {
                         if (p.text) text += p.text;
-                        // Attempt to reconstruct attachments if inlineData is present (base64)
                         if (p.inlineData) {
                             atts.push({
                                 id: `hist-att-${index}-${Date.now()}-${Math.random()}`,
-                                type: 'image', // Default assumption
+                                type: 'image',
                                 url: `data:${p.inlineData.mimeType};base64,${p.inlineData.data}`,
                                 filename: 'history_asset',
                                 mimeType: p.inlineData.mimeType,
@@ -161,7 +162,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                     id: `msg-hist-${index}-${Date.now()}`,
                     role: h.role === 'model' ? 'model' : 'user',
                     text: text,
-                    timestamp: Date.now(), // Mock timestamp as it's not strictly persisted in simplified history
+                    timestamp: Date.now(),
                     attachments: atts.length > 0 ? atts : undefined
                 };
             });
@@ -181,7 +182,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     const newSession = await res.json();
     setSessions(prev => [newSession, ...prev]);
     setCurrentSessionId(newSession.id);
-    // Messages cleared via useEffect trigger
   };
 
   const deleteSession = async (id: string, e: React.MouseEvent) => {
@@ -199,88 +199,97 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
     const textToSend = textOverride || input;
     if ((!textToSend.trim() && attachments.length === 0) || isLoading) return;
     
-    // Auto-create session if none
-    let activeSessionId = currentSessionId;
-    if (!activeSessionId) {
-        // Quick session creation
-        const res = await fetch('/api/ai/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'general' }) });
-        const newS = await res.json();
-        setSessions(prev => [newS, ...prev]);
-        activeSessionId = newS.id;
-        setCurrentSessionId(newS.id);
-    }
-
-    const tempAttachments = [...attachments];
-    
-    // User Message
-    const userMsg: ChatMessage = {
-      id: Date.now().toString(),
-      role: 'user',
-      text: textToSend,
-      timestamp: Date.now(),
-      attachments: tempAttachments
-    };
-    
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setAttachments([]);
+    // FIX: Lock history loading
+    isSendingRef.current = true;
     setIsLoading(true);
 
-    // AI Placeholder
-    const aiMsgId = (Date.now() + 1).toString();
-    const aiMsgPlaceholder: ChatMessage = {
-      id: aiMsgId,
-      role: 'model',
-      text: '',
-      timestamp: Date.now() + 1,
-      isThinking: true
-    };
-    setMessages(prev => [...prev, aiMsgPlaceholder]);
-
     try {
-      const response = await fetch('/api/ai/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sessionId: activeSessionId,
-          message: textToSend,
-          attachments: tempAttachments, // Send metadata + base64 if small
-          model: model,
-          lang: lang // Pass language setting
-        })
-      });
+        // Auto-create session if none
+        let activeSessionId = currentSessionId;
+        if (!activeSessionId) {
+            try {
+                const res = await fetch('/api/ai/sessions', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: 'general' }) });
+                const newS = await res.json();
+                setSessions(prev => [newS, ...prev]);
+                activeSessionId = newS.id;
+                setCurrentSessionId(newS.id);
+            } catch (e) {
+                console.error("Failed to create session", e);
+                return;
+            }
+        }
 
-      if (!response.body) throw new Error("No response");
+        const tempAttachments = [...attachments];
+        
+        // User Message
+        const userMsg: ChatMessage = {
+          id: Date.now().toString(),
+          role: 'user',
+          text: textToSend,
+          timestamp: Date.now(),
+          attachments: tempAttachments
+        };
+        
+        setMessages(prev => [...prev, userMsg]);
+        setInput('');
+        setAttachments([]);
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let done = false;
-      let accumulatedText = '';
+        // AI Placeholder
+        const aiMsgId = (Date.now() + 1).toString();
+        const aiMsgPlaceholder: ChatMessage = {
+          id: aiMsgId,
+          role: 'model',
+          text: '',
+          timestamp: Date.now() + 1,
+          isThinking: true
+        };
+        setMessages(prev => [...prev, aiMsgPlaceholder]);
 
-      while (!done) {
-        const { value, done: doneReading } = await reader.read();
-        done = doneReading;
-        const chunkValue = decoder.decode(value, { stream: !done });
-        accumulatedText += chunkValue;
+        try {
+          const response = await fetch('/api/ai/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              sessionId: activeSessionId,
+              message: textToSend,
+              attachments: tempAttachments,
+              model: model,
+              lang: lang
+            })
+          });
 
-        setMessages(prev => prev.map(msg => 
-          msg.id === aiMsgId 
-            ? { ...msg, text: accumulatedText, isThinking: false } 
-            : msg
-        ));
-      }
-      
-      // Update Session Preview in list locally
-      setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, lastMessageAt: Date.now(), preview: accumulatedText.substring(0, 50) } : s));
+          if (!response.body) throw new Error("No response");
 
-    } catch (error) {
-      console.error(error);
-      setMessages(prev => prev.map(msg => 
-        msg.id === aiMsgId ? { ...msg, text: t.error, isThinking: false } : msg
-      ));
+          const reader = response.body.getReader();
+          const decoder = new TextDecoder();
+          let done = false;
+          let accumulatedText = '';
+
+          while (!done) {
+            const { value, done: doneReading } = await reader.read();
+            done = doneReading;
+            const chunkValue = decoder.decode(value, { stream: !done });
+            accumulatedText += chunkValue;
+
+            setMessages(prev => prev.map(msg => 
+              msg.id === aiMsgId 
+                ? { ...msg, text: accumulatedText, isThinking: false } 
+                : msg
+            ));
+          }
+          
+          setSessions(prev => prev.map(s => s.id === activeSessionId ? { ...s, lastMessageAt: Date.now(), preview: accumulatedText.substring(0, 50) } : s));
+
+        } catch (error) {
+          console.error(error);
+          setMessages(prev => prev.map(msg => 
+            msg.id === aiMsgId ? { ...msg, text: t.error, isThinking: false } : msg
+          ));
+        }
     } finally {
-      setIsLoading(false);
-      setTimeout(() => inputRef.current?.focus(), 100);
+        setIsLoading(false);
+        isSendingRef.current = false; // FIX: Unlock
+        setTimeout(() => inputRef.current?.focus(), 100);
     }
   };
 
@@ -295,8 +304,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               const res = await fetch('/api/upload', { method: 'POST', body: formData });
               const data = await res.json();
               
-              // For small text files/images, we can also read client side for preview
-              // For now, we trust server response
               const newAtt: AIAttachment = {
                   id: data.id,
                   type: file.type.startsWith('image/') ? 'image' : 'file',
@@ -319,16 +326,16 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
           mediaRecorder.ondataavailable = (e) => chunks.push(e.data);
           mediaRecorder.onstop = async () => {
-              const blob = new Blob(chunks, { type: 'audio/webm' }); // Chrome uses webm
+              const blob = new Blob(chunks, { type: 'audio/webm' }); 
               const formData = new FormData();
               formData.append('audio', blob, 'voice_input.webm');
               
-              setIsLoading(true); // Temp loading while transcribing
+              setIsLoading(true); 
               try {
                   const res = await fetch('/api/ai/transcribe', { method: 'POST', headers: { 'api-key': 'internal' }, body: formData });
                   const data = await res.json();
                   if (data.text) {
-                      handleSend(data.text); // Auto send transcript
+                      handleSend(data.text); 
                   }
               } catch (e) { console.error(e); } finally { setIsLoading(false); }
           };
@@ -346,7 +353,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   // --- TTS ---
   const playTTS = async (text: string) => {
       try {
-          // Strip Markdown images/video from TTS
           const cleanText = text.replace(/!\[.*?\]\(.*?\)/g, '');
           
           const res = await fetch('/api/ai/tts', { 
@@ -362,9 +368,8 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       } catch (e) { console.error(e); }
   };
 
-  // --- Message Renderer with Markdown Image/Video Support ---
+  // --- Render Helpers ---
   const renderMessageContent = (text: string) => {
-      // Regex to find ![alt](url)
       const parts = text.split(/(!\[.*?\]\(.*?\))/g);
       return parts.map((part, index) => {
           const imgMatch = part.match(/!\[(.*?)\]\((.*?)\)/);
@@ -372,7 +377,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
               const alt = imgMatch[1];
               const url = imgMatch[2];
               
-              // Handle MP4 Video
               if (url.endsWith('.mp4') || alt.toLowerCase().includes('video')) {
                    return (
                       <div key={index} className="my-2 rounded-lg overflow-hidden border border-purple-600 shadow-lg relative group">
@@ -393,7 +397,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       });
   };
 
-  // --- Render Helpers ---
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
   const currentMeta = modelMeta[model] || { cost: 0, iq: 0, speed: 0 };
@@ -428,7 +431,7 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
            </div>
         </div>
 
-        {/* Mode Selector (Quick Switch) */}
+        {/* Mode Selector */}
         <div className="p-2 border-t border-slate-800 hidden md:block">
             <div className="text-[10px] text-slate-500 font-code mb-2">{t.modes}</div>
             <div className="grid grid-cols-2 gap-1">
@@ -468,7 +471,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                 </select>
               </div>
               
-              {/* Stats Badge */}
               <div className="flex items-center gap-3 bg-black/20 px-2 py-1 rounded border border-white/5">
                  <div className="flex items-center gap-1">
                     <span className="text-[9px] text-slate-500 font-code uppercase">{t.cost}</span>
@@ -515,8 +517,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
                     </div>
                     
                     <div className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                       
-                       {/* Attachments Display */}
                        {msg.attachments && msg.attachments.length > 0 && (
                            <div className="flex flex-wrap gap-2 mb-2 justify-end">
                                {msg.attachments.map(att => (
@@ -551,7 +551,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
 
         {/* Input Area */}
         <div className="p-4 bg-slate-900/90 backdrop-blur-xl border-t border-cyan-900/30 relative z-30">
-           {/* Attachment Preview Bar */}
            {attachments.length > 0 && (
                <div className="flex gap-2 mb-2 overflow-x-auto pb-2">
                    <span className="text-xs text-cyan-500 font-code self-center mr-2">{t.attach}</span>
@@ -565,7 +564,6 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
            )}
 
            <div className="max-w-4xl mx-auto flex gap-3 items-end">
-              {/* Tools: Upload & Voice */}
               <div className="flex gap-2 pb-2">
                   <button onClick={() => fileInputRef.current?.click()} className="text-slate-500 hover:text-cyan-400 p-2 border border-transparent hover:border-slate-700 rounded transition-all">
                       <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
