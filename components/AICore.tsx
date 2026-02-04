@@ -55,7 +55,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       ai: "AI",
       cost: "COST",
       iq: "IQ",
-      speed: "SPD"
+      speed: "SPD",
+      fileError: "ERROR: UNSUPPORTED FORMAT",
+      fileHint: "SUPPORTED: IMG, VIDEO, AUDIO, PDF, CODE/TXT"
     },
     zh: {
       aiCoreTitle: "AI 核心",
@@ -84,7 +86,9 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
       ai: "AI",
       cost: "成本",
       iq: "智商",
-      speed: "速度"
+      speed: "速度",
+      fileError: "错误：不支持的文件格式",
+      fileHint: "支持格式：图片、视频、音频、PDF、代码/文本"
     }
   }[lang];
 
@@ -297,6 +301,20 @@ export const AICore: React.FC<AICoreProps> = ({ lang }) => {
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
       if (e.target.files && e.target.files.length > 0) {
           const file = e.target.files[0];
+
+          // Validation
+          const validTypes = ['image/', 'video/', 'audio/', 'text/', 'application/pdf'];
+          const validExts = ['.js', '.ts', '.jsx', '.tsx', '.py', '.java', '.c', '.cpp', '.h', '.cs', '.go', '.rs', '.php', '.html', '.css', '.json', '.xml', '.yaml', '.yml', '.md', '.sql'];
+          
+          const isValidType = validTypes.some(t => file.type.startsWith(t));
+          const isValidExt = validExts.some(ext => file.name.toLowerCase().endsWith(ext));
+
+          if (!isValidType && !isValidExt) {
+              alert(`${t.fileError}\n${t.fileHint}`);
+              if (fileInputRef.current) fileInputRef.current.value = '';
+              return;
+          }
+
           const formData = new FormData();
           formData.append('image', file);
           
