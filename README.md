@@ -1,5 +1,5 @@
 
-# 图酷 (TuKu) - Online Image Processor
+# 图酷 (TuKu) - Online Image Processor & Market Terminal
 
 ## 🚀 Deployment Guide
 
