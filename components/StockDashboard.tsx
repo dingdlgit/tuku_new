@@ -139,7 +139,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       if (!response.ok) throw new Error(result.error || 'Connection Failed');
       setData(result);
       
-      // Default range: Full history
+      // Default: show the latest year for better clarity initially
       setDisplayHistory(result.history);
       if (result.history && result.history.length > 0) {
         setBtConfig(prev => ({
@@ -202,7 +202,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       });
       const result = await response.json();
       setBtResult(result);
-      // Refresh chart to show only this period
+      // REFRESH Chart to only show backtest period
       setDisplayHistory(filtered);
     } catch (e: any) {
       setError("Backtest Failed");
@@ -255,7 +255,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const h = logicalH;
     const padding = { left: 60, right: 60, top: 40, bottom: 40, subTop: 0.75 * h };
     
-    // 1. Draw Background (White) for CHART area
+    // 1. CHART AREA BACKGROUND (Pure White)
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, w, h);
 
@@ -277,7 +277,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         return padding.subTop + 10 + (1 - (val - min) / range) * (h - padding.bottom - (padding.subTop + 10));
     };
 
-    // 2. Draw Grid
+    // 2. Draw Grid (Light Grey)
     ctx.strokeStyle = '#f1f5f9';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
@@ -293,7 +293,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         ctx.fillText((maxPrice - (i/4) * priceRange).toFixed(2), padding.left - 5, y + 4);
     }
 
-    // 3. Draw K-Lines
+    // 3. Draw K-Lines (Red Up, Green Down)
     const candleW = Math.max(1, stepX * 0.7);
     hist.forEach((d, i) => {
         const x = padding.left + i * stepX;
@@ -306,13 +306,13 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         ctx.lineTo(x + candleW / 2, getPriceY(d.low));
         ctx.stroke();
 
-        // Body 
+        // Body
         ctx.fillStyle = color;
         const bodyY = getPriceY(Math.max(d.open, d.close));
         const bodyH = Math.max(1, Math.abs(getPriceY(d.open) - getPriceY(d.close)));
         ctx.fillRect(x, bodyY, candleW, bodyH);
 
-        // Date labels (approx 6 labels)
+        // Date X-Labels
         if (i % Math.floor(hist.length / 6) === 0) {
             ctx.fillStyle = '#94a3b8';
             ctx.textAlign = 'center';
@@ -320,10 +320,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         }
     });
 
-    // 4. Draw Moving Averages (MA5:Black, MA10:Yellow, MA20:Pink, MA30:Green)
+    // 4. DRAW MOVING AVERAGES (THS Style: Black/Yellow/Pink/Green)
     const drawMA = (ma: (number | null)[], color: string) => {
         ctx.strokeStyle = color;
-        ctx.lineWidth = 1.2;
+        ctx.lineWidth = 1.3;
         ctx.beginPath();
         let first = true;
         ma.forEach((val, i) => {
@@ -341,7 +341,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     drawMA(ma20, '#ec4899'); // MA20 - Pink
     drawMA(ma30, '#22c55e'); // MA30 - Green
 
-    // 5. Draw Sub-Indicator
+    // 5. Indicators
     if (indicator === 'VOL') {
         const maxV = Math.max(...hist.map(d => d.volume));
         hist.forEach((d, i) => {
@@ -354,7 +354,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         const maxM = Math.max(...macd.diff, ...macd.dea, ...macd.hist.map(Math.abs));
         const minM = Math.min(...macd.diff, ...macd.dea, ...macd.hist.map(v => -Math.abs(v)));
         const zeroY = getSubY(0, maxM, minM);
-        
         hist.forEach((d, i) => {
             const x = padding.left + i * stepX;
             const val = macd.hist[i];
@@ -362,36 +361,19 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
             ctx.fillStyle = val >= 0 ? '#eb4432' : '#009b72';
             ctx.fillRect(x, Math.min(y, zeroY), candleW, Math.abs(y - zeroY));
         });
-
-        ctx.strokeStyle = '#000000'; // DIFF
-        ctx.beginPath();
-        macd.diff.forEach((v, i) => {
-            const x = padding.left + i * stepX + candleW/2;
-            const y = getSubY(v, maxM, minM);
-            if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-        });
-        ctx.stroke();
-
-        ctx.strokeStyle = '#eab308'; // DEA
-        ctx.beginPath();
-        macd.dea.forEach((v, i) => {
-            const x = padding.left + i * stepX + candleW/2;
-            const y = getSubY(v, maxM, minM);
-            if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-        });
-        ctx.stroke();
-    } else if (indicator === 'AMT') {
-        const turnover = hist.map(d => d.volume * d.close);
-        const maxAmt = Math.max(...turnover);
-        hist.forEach((d, i) => {
-            const x = padding.left + i * stepX;
-            const vH = (turnover[i] / maxAmt) * (h - padding.bottom - padding.subTop - 10);
-            ctx.fillStyle = 'rgba(6,182,212,0.6)';
-            ctx.fillRect(x, h - padding.bottom - vH, candleW, vH);
-        });
+        const drawLine = (arr: number[], color: string) => {
+            ctx.strokeStyle = color; ctx.beginPath();
+            arr.forEach((v, i) => {
+                const x = padding.left + i * stepX + candleW/2;
+                const y = getSubY(v, maxM, minM);
+                if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+            }); ctx.stroke();
+        };
+        drawLine(macd.diff, '#000000');
+        drawLine(macd.dea, '#eab308');
     }
 
-    // 6. Draw Highly Significant Backtest Signals
+    // 6. HIGH VISIBILITY BACKTEST SIGNALS
     if (btResult && btResult.trades) {
         btResult.trades.forEach(trade => {
             const index = hist.findIndex(d => d.date === trade.date);
@@ -401,26 +383,25 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                 
                 ctx.font = 'bold 12px Rajdhani';
                 ctx.textAlign = 'center';
+                ctx.lineWidth = 2.5;
                 
                 if (trade.type === 'BUY') {
-                    // Bright Red Circle with B
+                    // Big Red Indicator
                     ctx.fillStyle = '#eb4432';
                     ctx.beginPath(); ctx.arc(x, y + 25, 12, 0, Math.PI*2); ctx.fill();
-                    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.stroke();
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillText('B', x, y + 30);
-                    // Connection line
-                    ctx.strokeStyle = '#eb4432'; ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+                    ctx.fillStyle = '#FFFFFF'; ctx.fillText('B', x, y + 29);
+                    // Line to chart
+                    ctx.strokeStyle = '#eb4432'; ctx.lineWidth = 1.5;
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 13); ctx.stroke();
                 } else {
-                    // Bright Green Circle with S
+                    // Big Green Indicator
                     ctx.fillStyle = '#009b72';
                     ctx.beginPath(); ctx.arc(x, y - 25, 12, 0, Math.PI*2); ctx.fill();
-                    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.stroke();
-                    ctx.fillStyle = '#FFFFFF';
-                    ctx.fillText('S', x, y - 20);
-                    // Connection line
-                    ctx.strokeStyle = '#009b72'; ctx.lineWidth = 2;
+                    ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
+                    ctx.fillStyle = '#FFFFFF'; ctx.fillText('S', x, y - 21);
+                    // Line to chart
+                    ctx.strokeStyle = '#009b72'; ctx.lineWidth = 1.5;
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 13); ctx.stroke();
                 }
             }
@@ -430,74 +411,73 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
   }, [displayHistory, btResult, indicator, lang]);
 
   return (
-    <div className="h-full flex flex-col bg-[#f0f2f5] custom-scrollbar p-6">
+    <div className="h-full flex flex-col bg-[#020617] custom-scrollbar p-6">
       <div className="max-w-7xl mx-auto w-full space-y-6">
         
-        {/* Header Search */}
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-slate-300 pb-6">
-            <h2 className="text-3xl font-tech font-bold text-slate-900 tracking-widest uppercase">{t.title}</h2>
-            <div className="flex bg-white border border-slate-300 p-1 shadow-sm">
-                <input value={code} onChange={e => setCode(e.target.value)} placeholder={t.placeholder} className="bg-transparent text-slate-900 px-4 py-2 font-code focus:outline-none uppercase w-64" onKeyDown={e=>e.key==='Enter' && handleSearch()} />
-                <button onClick={handleSearch} disabled={loading} className="bg-slate-900 hover:bg-black text-white font-tech px-8 py-2 font-bold tracking-widest clip-button transition-all">
+        {/* Header Search - Stays Dark */}
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-cyan-900/30 pb-6">
+            <h2 className="text-3xl font-tech font-bold text-white tracking-widest uppercase">{t.title}</h2>
+            <div className="flex bg-slate-900 border border-cyan-900/50 p-1 group">
+                <input value={code} onChange={e => setCode(e.target.value)} placeholder={t.placeholder} className="bg-transparent text-white px-4 py-2 font-code focus:outline-none uppercase w-64" onKeyDown={e=>e.key==='Enter' && handleSearch()} />
+                <button onClick={handleSearch} disabled={loading} className="bg-cyan-600 hover:bg-cyan-500 text-white font-tech px-8 py-2 font-bold tracking-widest clip-button transition-all">
                     {loading ? t.loading : t.search}
                 </button>
             </div>
         </div>
 
-        {error && <div className="p-3 bg-rose-50 border border-rose-200 text-rose-600 text-xs font-code uppercase animate-pulse">! SYSTEM ERROR: {error}</div>}
+        {error && <div className="p-3 bg-rose-950/20 border border-rose-500 text-rose-500 text-xs font-code uppercase animate-pulse">! SYSTEM ERROR: {error}</div>}
 
         {!data ? (
             <div className="h-96 flex flex-col items-center justify-center opacity-40">
-                <div className="w-16 h-16 border-2 border-slate-300 rounded-full animate-spin mb-4 border-t-slate-900"></div>
-                <div className="font-code text-sm tracking-widest text-slate-900">{t.noData}</div>
+                <div className="w-16 h-16 border-2 border-slate-800 rounded-full animate-spin mb-4 border-t-cyan-500"></div>
+                <div className="font-code text-sm tracking-widest">{t.noData}</div>
             </div>
         ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20">
                 
-                {/* Left: Chart Area */}
+                {/* Left Area - Stays Dark, Only Canvas is White */}
                 <div className="lg:col-span-8 space-y-6">
-                    <div className="bg-white border border-slate-300 p-6 relative overflow-hidden shadow-sm">
+                    <div className="bg-slate-900/60 border border-slate-800 p-6 relative overflow-hidden group">
                         <div className="flex justify-between items-start mb-4">
                             <div>
-                                <h3 className="text-2xl font-tech font-bold text-slate-900">{data.name} <span className="text-sm font-code text-slate-400 ml-2">{data.code}</span></h3>
+                                <h3 className="text-2xl font-tech font-bold text-white">{data.name} <span className="text-sm font-code text-cyan-500 ml-2">{data.code}</span></h3>
                                 <div className="flex items-center gap-4 mt-1">
-                                    <span className={`text-2xl font-code font-black ${data.changePercent >= 0 ? 'text-rose-600' : 'text-emerald-600'}`}>{data.currentPrice.toFixed(2)}</span>
-                                    <span className={`text-sm font-bold ${data.changePercent >= 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                    <span className={`text-2xl font-code font-black ${data.changePercent >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{data.currentPrice.toFixed(2)}</span>
+                                    <span className={`text-sm font-bold ${data.changePercent >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                                         {data.changePercent >= 0 ? '+' : ''}{data.changePercent.toFixed(2)}%
                                     </span>
                                     <div className="flex gap-2 text-[10px] font-bold font-code ml-4">
-                                        <span className="text-black border-b border-black">MA5</span>
-                                        <span className="text-yellow-600 border-b border-yellow-600">MA10</span>
-                                        <span className="text-pink-600 border-b border-pink-600">MA20</span>
-                                        <span className="text-emerald-600 border-b border-emerald-600">MA30</span>
+                                        <span className="text-white border-b border-white">MA5</span>
+                                        <span className="text-yellow-400 border-b border-yellow-400">MA10</span>
+                                        <span className="text-pink-400 border-b border-pink-400">MA20</span>
+                                        <span className="text-emerald-400 border-b border-emerald-400">MA30</span>
                                     </div>
                                 </div>
                             </div>
-                            
                             <div className="flex gap-1">
-                                {(['VOL', 'MACD', 'AMT'] as IndicatorType[]).map(type => (
-                                    <button key={type} onClick={() => setIndicator(type)} className={`px-4 py-1.5 text-[10px] font-tech border transition-all ${indicator === type ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'text-slate-400 border-slate-200 hover:border-slate-400 hover:text-slate-900'}`}>
+                                {(['VOL', 'MACD'] as IndicatorType[]).map(type => (
+                                    <button key={type} onClick={() => setIndicator(type)} className={`px-4 py-1 text-[10px] font-tech border transition-all ${indicator === type ? 'bg-cyan-500 text-black border-cyan-400 shadow-[0_0_10px_rgba(6,182,212,0.4)]' : 'text-slate-500 border-slate-700 hover:border-cyan-500'}`}>
                                         {t[type.toLowerCase() as keyof typeof t] as string}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        {/* Chart Container - Fixed White */}
-                        <div className="relative h-[550px] w-full bg-white border border-slate-100 rounded-sm">
+                        {/* Chart Area Container - White */}
+                        <div className="relative h-[550px] w-full bg-white border border-slate-800 rounded-sm">
                             <canvas ref={mainCanvasRef} className="w-full h-full cursor-crosshair" />
                         </div>
                     </div>
 
-                    {/* Backtest Section */}
-                    <div className="bg-white border border-slate-300 p-6 shadow-sm">
-                        <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-3">
-                            <h4 className="font-tech text-slate-900 font-bold uppercase tracking-widest flex items-center gap-2">
-                                <span className="w-2 h-2 bg-slate-900 animate-pulse"></span>
+                    {/* Backtest Section - Stays Dark */}
+                    <div className="bg-slate-900/60 border border-slate-800 p-6">
+                        <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-3">
+                            <h4 className="font-tech text-cyan-400 font-bold uppercase tracking-widest flex items-center gap-2">
+                                <span className="w-2 h-2 bg-cyan-500 animate-pulse"></span>
                                 {t.backtest}
                             </h4>
-                            <button onClick={handleBacktest} disabled={btLoading} className="bg-slate-900 text-white px-8 py-2 text-xs font-tech font-bold hover:bg-black transition-all clip-button shadow-lg">
-                                {btLoading ? 'CALCULATING...' : t.runBt}
+                            <button onClick={handleBacktest} disabled={btLoading} className="bg-cyan-600 text-white px-8 py-2 text-xs font-tech font-bold hover:bg-cyan-500 transition-all clip-button shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+                                {btLoading ? 'PROCESSING...' : t.runBt}
                             </button>
                         </div>
 
@@ -505,32 +485,31 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                              <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-400 font-code uppercase">{t.startDate}</label>
-                                        <input type="date" value={btConfig.startDate} onChange={e=>setBtConfig({...btConfig, startDate: e.target.value})} className="w-full bg-slate-50 border border-slate-200 text-slate-900 p-2 text-xs focus:border-slate-900 focus:outline-none" />
+                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.startDate}</label>
+                                        <input type="date" value={btConfig.startDate} onChange={e=>setBtConfig({...btConfig, startDate: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-400 font-code uppercase">{t.endDate}</label>
-                                        <input type="date" value={btConfig.endDate} onChange={e=>setBtConfig({...btConfig, endDate: e.target.value})} className="w-full bg-slate-50 border border-slate-200 text-slate-900 p-2 text-xs focus:border-slate-900 focus:outline-none" />
+                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.endDate}</label>
+                                        <input type="date" value={btConfig.endDate} onChange={e=>setBtConfig({...btConfig, endDate: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-400 font-code uppercase">{t.capital}</label>
-                                        <input type="number" value={btConfig.capital} onChange={e=>setBtConfig({...btConfig, capital: Number(e.target.value)})} className="w-full bg-slate-50 border border-slate-200 text-slate-900 p-2 text-xs focus:border-slate-900 focus:outline-none" />
+                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.capital}</label>
+                                        <input type="number" value={btConfig.capital} onChange={e=>setBtConfig({...btConfig, capital: Number(e.target.value)})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-400 font-code uppercase">{t.strategy}</label>
-                                        <select value={btConfig.strategy} onChange={e=>setBtConfig({...btConfig, strategy: e.target.value})} className="w-full bg-slate-50 border border-slate-200 text-slate-900 p-2 text-xs focus:border-slate-900 focus:outline-none">
+                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.strategy}</label>
+                                        <select value={btConfig.strategy} onChange={e=>setBtConfig({...btConfig, strategy: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500">
                                             <option value="smaCross">{t.strategies.smaCross.name}</option>
                                             <option value="ma5Hold">{t.strategies.ma5Hold.name}</option>
                                         </select>
                                     </div>
                                 </div>
                              </div>
-
-                             <div className="bg-slate-50 p-4 border-l-2 border-slate-300">
-                                <h5 className="text-[10px] font-tech text-slate-500 uppercase mb-2">{t.strategyDesc}</h5>
-                                <p className="text-[11px] text-slate-600 font-code leading-relaxed">
+                             <div className="bg-black/40 p-4 border-l-2 border-cyan-500/30">
+                                <h5 className="text-[10px] font-tech text-cyan-500 uppercase mb-2">{t.strategyDesc}</h5>
+                                <p className="text-[11px] text-slate-400 font-code leading-relaxed">
                                     {t.strategies[btConfig.strategy as keyof typeof t.strategies]?.desc}
                                 </p>
                              </div>
@@ -538,62 +517,61 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
                         {btResult && (
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8 animate-in fade-in zoom-in duration-300">
-                                <div className="bg-slate-50 p-4 border-l-2 border-slate-900 shadow-sm">
-                                    <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.finalValue}</div>
-                                    <div className="text-xl font-code font-bold text-slate-900">{btResult.final_value.toFixed(2)}</div>
+                                <div className="bg-black/40 p-4 border-l-2 border-cyan-500">
+                                    <div className="text-[10px] text-slate-500 font-tech mb-1 uppercase">{t.finalValue}</div>
+                                    <div className="text-xl font-code font-bold text-white">{btResult.final_value.toFixed(2)}</div>
                                 </div>
-                                <div className="bg-slate-50 p-4 border-l-2 border-rose-500 shadow-sm">
-                                    <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.totalReturn}</div>
-                                    <div className={`text-xl font-code font-bold ${btResult.total_return >= 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                                <div className="bg-black/40 p-4 border-l-2 border-purple-500">
+                                    <div className="text-[10px] text-slate-500 font-tech mb-1 uppercase">{t.totalReturn}</div>
+                                    <div className={`text-xl font-code font-bold ${btResult.total_return >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
                                         {(btResult.total_return * 100).toFixed(2)}%
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 p-4 border-l-2 border-orange-500 shadow-sm">
-                                    <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.maxDD}</div>
-                                    <div className="text-xl font-code font-bold text-orange-600">{(btResult.max_drawdown * 100).toFixed(2)}%</div>
+                                <div className="bg-black/40 p-4 border-l-2 border-orange-500">
+                                    <div className="text-[10px] text-slate-500 font-tech mb-1 uppercase">{t.maxDD}</div>
+                                    <div className="text-xl font-code font-bold text-orange-400">{(btResult.max_drawdown * 100).toFixed(2)}%</div>
                                 </div>
-                                <div className="bg-slate-50 p-4 border-l-2 border-emerald-500 shadow-sm">
-                                    <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.sharpe}</div>
-                                    <div className="text-xl font-code font-bold text-emerald-600">{btResult.sharpe.toFixed(3)}</div>
+                                <div className="bg-black/40 p-4 border-l-2 border-emerald-500">
+                                    <div className="text-[10px] text-slate-500 font-tech mb-1 uppercase">{t.sharpe}</div>
+                                    <div className="text-xl font-code font-bold text-emerald-400">{btResult.sharpe.toFixed(3)}</div>
                                 </div>
                             </div>
                         )}
                     </div>
                 </div>
 
-                {/* Right Area: AI & Trades */}
+                {/* Right Area - Stays Dark */}
                 <div className="lg:col-span-4 space-y-6">
-                    <div className="bg-white border border-slate-300 p-6 relative overflow-hidden group shadow-sm">
-                        <h4 className="font-tech text-slate-900 font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
+                    <div className="bg-slate-900 border border-slate-800 p-6 relative overflow-hidden group">
+                        <h4 className="font-tech text-purple-400 font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                              {t.aiAnalyze}
                         </h4>
-                        
                         {!aiResult ? (
                             <div className="text-center py-6">
                                 <p className="text-xs text-slate-500 font-code mb-6 uppercase tracking-tight">{t.aiHint}</p>
-                                <button onClick={handleAiAnalysis} disabled={aiLoading} className="w-full py-3 bg-slate-900 text-white font-tech font-bold uppercase tracking-widest hover:bg-black transition-all clip-button">
-                                    {aiLoading ? 'ANALYZING...' : 'START DIAGNOSTIC'}
+                                <button onClick={handleAiAnalysis} disabled={aiLoading} className="w-full py-3 bg-purple-900/20 border border-purple-500/50 text-purple-400 font-tech font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all clip-button">
+                                    {aiLoading ? 'SYNCING...' : 'START DIAGNOSTIC'}
                                 </button>
                             </div>
                         ) : (
                             <div className="space-y-4 animate-in fade-in duration-500">
-                                <div className="bg-slate-50 p-3 rounded">
-                                    <span className="text-[10px] font-tech text-slate-400 uppercase">Sentiment Index</span>
+                                <div className="bg-black/40 p-3">
+                                    <span className="text-[10px] font-tech text-slate-500 uppercase">Sentiment Index</span>
                                     <div className="flex gap-1 mt-1">
                                         {[...Array(5)].map((_, i) => (
-                                            <div key={i} className={`w-3 h-5 ${i < (aiResult.sentiment/20) ? 'bg-slate-900' : 'bg-slate-200'}`}></div>
+                                            <div key={i} className={`w-3 h-5 ${i < (aiResult.sentiment/20) ? 'bg-purple-500' : 'bg-slate-800'}`}></div>
                                         ))}
                                     </div>
                                 </div>
                                 <div className="space-y-3">
                                     <div>
-                                        <div className="text-[9px] font-tech text-slate-400 uppercase mb-1">STRATEGY ADVICE</div>
-                                        <p className="text-[11px] text-slate-700 font-code leading-relaxed bg-slate-50 p-2 border-l-2 border-slate-300">{aiResult.strategyAdvice?.shortTerm}</p>
+                                        <div className="text-[9px] font-tech text-slate-600 uppercase mb-1">STRATEGY ADVICE</div>
+                                        <p className="text-[11px] text-slate-300 font-code leading-relaxed bg-black/20 p-2">{aiResult.strategyAdvice?.shortTerm}</p>
                                     </div>
                                     <div>
-                                        <div className="text-[9px] font-tech text-rose-500 uppercase mb-1">RISK ALERT</div>
-                                        <ul className="text-[10px] text-rose-600 font-code list-disc list-inside">
+                                        <div className="text-[9px] font-tech text-rose-600 uppercase mb-1">RISK ALERT</div>
+                                        <ul className="text-[10px] text-rose-400/80 font-code list-disc list-inside">
                                             {aiResult.risks?.map((r: string, i: number) => <li key={i}>{r}</li>)}
                                         </ul>
                                     </div>
@@ -602,24 +580,24 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                         )}
                     </div>
 
-                    <div className="bg-white border border-slate-300 p-6 flex-1 flex flex-col h-[500px] shadow-sm">
-                        <h4 className="font-tech text-slate-400 font-bold uppercase tracking-widest mb-4">{t.trades}</h4>
+                    <div className="bg-slate-900 border border-slate-800 p-6 flex-1 flex flex-col h-[500px]">
+                        <h4 className="font-tech text-slate-500 font-bold uppercase tracking-widest mb-4">{t.trades}</h4>
                         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
                              {btResult?.trades && btResult.trades.length > 0 ? (
                                  btResult.trades.map((trade, i) => (
-                                     <div key={i} className={`p-3 border-l-4 bg-slate-50 font-code flex justify-between items-center ${trade.type === 'BUY' ? 'border-rose-500' : 'border-emerald-500'}`}>
+                                     <div key={i} className={`p-3 border-l-4 bg-black/20 font-code flex justify-between items-center ${trade.type === 'BUY' ? 'border-rose-500' : 'border-emerald-500'}`}>
                                          <div>
-                                             <div className="text-[10px] text-slate-400">{trade.date}</div>
-                                             <div className={`text-xs font-bold ${trade.type === 'BUY' ? 'text-rose-600' : 'text-emerald-600'}`}>{trade.type} @ {trade.price.toFixed(2)}</div>
+                                             <div className="text-[10px] text-slate-500">{trade.date}</div>
+                                             <div className={`text-xs font-bold ${trade.type === 'BUY' ? 'text-rose-400' : 'text-emerald-400'}`}>{trade.type} @ {trade.price.toFixed(2)}</div>
                                          </div>
                                          <div className="text-right">
-                                             <div className="text-[10px] text-slate-400">VAL: {trade.cost.toFixed(0)}</div>
-                                             <div className="text-[9px] text-slate-500">FEE: {trade.commission.toFixed(1)}</div>
+                                             <div className="text-[10px] text-slate-500">VAL: {trade.cost.toFixed(0)}</div>
+                                             <div className="text-[9px] text-slate-600">FEE: {trade.commission.toFixed(1)}</div>
                                          </div>
                                      </div>
                                  )).reverse()
                              ) : (
-                                 <div className="h-full flex items-center justify-center text-[10px] text-slate-300 font-code uppercase tracking-widest">Awaiting execution</div>
+                                 <div className="h-full flex items-center justify-center text-[10px] text-slate-700 font-code uppercase tracking-widest">Awaiting execution</div>
                              )}
                         </div>
                     </div>
