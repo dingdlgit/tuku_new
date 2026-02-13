@@ -139,7 +139,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       if (!response.ok) throw new Error(result.error || 'Connection Failed');
       setData(result);
       
-      // Default: show the latest year for better clarity initially
       setDisplayHistory(result.history);
       if (result.history && result.history.length > 0) {
         setBtConfig(prev => ({
@@ -177,7 +176,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     if (!data) return;
     setBtLoading(true);
     
-    // Filter history for calculation
     const filtered = data.history.filter(d => 
         (!btConfig.startDate || d.date >= btConfig.startDate) && 
         (!btConfig.endDate || d.date <= btConfig.endDate)
@@ -202,7 +200,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       });
       const result = await response.json();
       setBtResult(result);
-      // REFRESH Chart to only show backtest period
       setDisplayHistory(filtered);
     } catch (e: any) {
       setError("Backtest Failed");
@@ -211,7 +208,15 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     }
   };
 
-  // --- INDICATOR CALCULATION HELPERS ---
+  // Helper to force-show native date picker
+  const triggerDatePicker = (e: React.MouseEvent<HTMLInputElement>) => {
+    try {
+      (e.currentTarget as any).showPicker();
+    } catch (err) {
+      // Fallback for older browsers
+    }
+  };
+
   const calculateMA = (hist: OHLC[], period: number) => {
     return hist.map((_, i, arr) => {
       if (i < period - 1) return null;
@@ -255,7 +260,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const h = logicalH;
     const padding = { left: 60, right: 60, top: 40, bottom: 40, subTop: 0.75 * h };
     
-    // 1. CHART AREA BACKGROUND (Pure White)
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, w, h);
 
@@ -277,7 +281,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         return padding.subTop + 10 + (1 - (val - min) / range) * (h - padding.bottom - (padding.subTop + 10));
     };
 
-    // 2. Draw Grid (Light Grey)
     ctx.strokeStyle = '#f1f5f9';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
@@ -293,26 +296,22 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         ctx.fillText((maxPrice - (i/4) * priceRange).toFixed(2), padding.left - 5, y + 4);
     }
 
-    // 3. Draw K-Lines (Red Up, Green Down)
     const candleW = Math.max(1, stepX * 0.7);
     hist.forEach((d, i) => {
         const x = padding.left + i * stepX;
         const color = d.close >= d.open ? '#eb4432' : '#009b72'; 
         ctx.strokeStyle = color;
 
-        // Wick
         ctx.beginPath();
         ctx.moveTo(x + candleW / 2, getPriceY(d.high));
         ctx.lineTo(x + candleW / 2, getPriceY(d.low));
         ctx.stroke();
 
-        // Body
         ctx.fillStyle = color;
         const bodyY = getPriceY(Math.max(d.open, d.close));
         const bodyH = Math.max(1, Math.abs(getPriceY(d.open) - getPriceY(d.close)));
         ctx.fillRect(x, bodyY, candleW, bodyH);
 
-        // Date X-Labels
         if (i % Math.floor(hist.length / 6) === 0) {
             ctx.fillStyle = '#94a3b8';
             ctx.textAlign = 'center';
@@ -320,7 +319,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         }
     });
 
-    // 4. DRAW MOVING AVERAGES (THS Style: Black/Yellow/Pink/Green)
     const drawMA = (ma: (number | null)[], color: string) => {
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.3;
@@ -336,12 +334,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         ctx.stroke();
     };
 
-    drawMA(ma5, '#000000'); // MA5 - Black
-    drawMA(ma10, '#eab308'); // MA10 - Yellow
-    drawMA(ma20, '#ec4899'); // MA20 - Pink
-    drawMA(ma30, '#22c55e'); // MA30 - Green
+    drawMA(ma5, '#000000'); 
+    drawMA(ma10, '#eab308'); 
+    drawMA(ma20, '#ec4899'); 
+    drawMA(ma30, '#22c55e'); 
 
-    // 5. Indicators
     if (indicator === 'VOL') {
         const maxV = Math.max(...hist.map(d => d.volume));
         hist.forEach((d, i) => {
@@ -373,7 +370,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         drawLine(macd.dea, '#eab308');
     }
 
-    // 6. HIGH VISIBILITY BACKTEST SIGNALS
     if (btResult && btResult.trades) {
         btResult.trades.forEach(trade => {
             const index = hist.findIndex(d => d.date === trade.date);
@@ -386,21 +382,17 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                 ctx.lineWidth = 2.5;
                 
                 if (trade.type === 'BUY') {
-                    // Big Red Indicator
                     ctx.fillStyle = '#eb4432';
                     ctx.beginPath(); ctx.arc(x, y + 25, 12, 0, Math.PI*2); ctx.fill();
                     ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
                     ctx.fillStyle = '#FFFFFF'; ctx.fillText('B', x, y + 29);
-                    // Line to chart
                     ctx.strokeStyle = '#eb4432'; ctx.lineWidth = 1.5;
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 13); ctx.stroke();
                 } else {
-                    // Big Green Indicator
                     ctx.fillStyle = '#009b72';
                     ctx.beginPath(); ctx.arc(x, y - 25, 12, 0, Math.PI*2); ctx.fill();
                     ctx.strokeStyle = '#FFFFFF'; ctx.stroke();
                     ctx.fillStyle = '#FFFFFF'; ctx.fillText('S', x, y - 21);
-                    // Line to chart
                     ctx.strokeStyle = '#009b72'; ctx.lineWidth = 1.5;
                     ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 13); ctx.stroke();
                 }
@@ -414,7 +406,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     <div className="h-full flex flex-col bg-[#020617] custom-scrollbar p-6">
       <div className="max-w-7xl mx-auto w-full space-y-6">
         
-        {/* Header Search - Stays Dark */}
+        {/* Header Search */}
         <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-cyan-900/30 pb-6">
             <h2 className="text-3xl font-tech font-bold text-white tracking-widest uppercase">{t.title}</h2>
             <div className="flex bg-slate-900 border border-cyan-900/50 p-1 group">
@@ -435,7 +427,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20">
                 
-                {/* Left Area - Stays Dark, Only Canvas is White */}
+                {/* Left Area */}
                 <div className="lg:col-span-8 space-y-6">
                     <div className="bg-slate-900/60 border border-slate-800 p-6 relative overflow-hidden group">
                         <div className="flex justify-between items-start mb-4">
@@ -463,13 +455,12 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                             </div>
                         </div>
 
-                        {/* Chart Area Container - White */}
                         <div className="relative h-[550px] w-full bg-white border border-slate-800 rounded-sm">
                             <canvas ref={mainCanvasRef} className="w-full h-full cursor-crosshair" />
                         </div>
                     </div>
 
-                    {/* Backtest Section - Stays Dark */}
+                    {/* Backtest Section */}
                     <div className="bg-slate-900/60 border border-slate-800 p-6">
                         <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-3">
                             <h4 className="font-tech text-cyan-400 font-bold uppercase tracking-widest flex items-center gap-2">
@@ -485,12 +476,26 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                              <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.startDate}</label>
-                                        <input type="date" value={btConfig.startDate} onChange={e=>setBtConfig({...btConfig, startDate: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
+                                        <label htmlFor="bt-start-date" className="text-[10px] text-slate-500 font-code uppercase cursor-pointer hover:text-cyan-400 transition-colors">{t.startDate}</label>
+                                        <input 
+                                            id="bt-start-date"
+                                            type="date" 
+                                            value={btConfig.startDate} 
+                                            onChange={e=>setBtConfig({...btConfig, startDate: e.target.value})} 
+                                            onClick={triggerDatePicker}
+                                            className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500 cursor-pointer [color-scheme:dark]" 
+                                        />
                                     </div>
                                     <div className="space-y-1">
-                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.endDate}</label>
-                                        <input type="date" value={btConfig.endDate} onChange={e=>setBtConfig({...btConfig, endDate: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
+                                        <label htmlFor="bt-end-date" className="text-[10px] text-slate-500 font-code uppercase cursor-pointer hover:text-cyan-400 transition-colors">{t.endDate}</label>
+                                        <input 
+                                            id="bt-end-date"
+                                            type="date" 
+                                            value={btConfig.endDate} 
+                                            onChange={e=>setBtConfig({...btConfig, endDate: e.target.value})} 
+                                            onClick={triggerDatePicker}
+                                            className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500 cursor-pointer [color-scheme:dark]" 
+                                        />
                                     </div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-4">
@@ -540,7 +545,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                     </div>
                 </div>
 
-                {/* Right Area - Stays Dark */}
+                {/* Right Area */}
                 <div className="lg:col-span-4 space-y-6">
                     <div className="bg-slate-900 border border-slate-800 p-6 relative overflow-hidden group">
                         <h4 className="font-tech text-purple-400 font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
