@@ -33,9 +33,12 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     capital: 100000, 
     commission: 0.0003, 
     strategy: 'smaCross',
-    startDate: '', // New Filter Date
-    endDate: ''   // New Filter Date
+    startDate: '', 
+    endDate: ''   
   });
+
+  // The subset of history actually shown on the chart
+  const [displayHistory, setDisplayHistory] = useState<OHLC[]>([]);
 
   const mainCanvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -120,19 +123,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     }
   }[lang];
 
-  // Logic to filter history based on dates
-  const filteredHistory = useMemo(() => {
-    if (!data) return [];
-    let hist = [...data.history];
-    if (btConfig.startDate) {
-        hist = hist.filter(d => d.date >= btConfig.startDate);
-    }
-    if (btConfig.endDate) {
-        hist = hist.filter(d => d.date <= btConfig.endDate);
-    }
-    return hist;
-  }, [data, btConfig.startDate, btConfig.endDate]);
-
   const handleSearch = async () => {
     if (!code) return;
     setError(null);
@@ -149,7 +139,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       if (!response.ok) throw new Error(result.error || 'Connection Failed');
       setData(result);
       
-      // Initialize dates if not set
+      // Default range: Full history
+      setDisplayHistory(result.history);
       if (result.history && result.history.length > 0) {
         setBtConfig(prev => ({
             ...prev,
@@ -185,12 +176,25 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
   const handleBacktest = async () => {
     if (!data) return;
     setBtLoading(true);
+    
+    // Filter history for calculation
+    const filtered = data.history.filter(d => 
+        (!btConfig.startDate || d.date >= btConfig.startDate) && 
+        (!btConfig.endDate || d.date <= btConfig.endDate)
+    );
+
+    if (filtered.length === 0) {
+        setError("Selected range has no data.");
+        setBtLoading(false);
+        return;
+    }
+
     try {
       const response = await fetch('/api/backtest', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          history: filteredHistory,
+          history: filtered,
           initial_capital: btConfig.capital,
           commission_rate: btConfig.commission,
           strategy: btConfig.strategy
@@ -198,6 +202,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       });
       const result = await response.json();
       setBtResult(result);
+      // Refresh chart to show only this period
+      setDisplayHistory(filtered);
     } catch (e: any) {
       setError("Backtest Failed");
     } finally {
@@ -233,7 +239,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
   };
 
   useEffect(() => {
-    if (filteredHistory.length === 0 || !mainCanvasRef.current) return;
+    if (displayHistory.length === 0 || !mainCanvasRef.current) return;
     const canvas = mainCanvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
@@ -249,11 +255,11 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const h = logicalH;
     const padding = { left: 60, right: 60, top: 40, bottom: 40, subTop: 0.75 * h };
     
-    // 1. Draw Background (White)
+    // 1. Draw Background (White) for CHART area
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(0, 0, w, h);
 
-    const hist = filteredHistory;
+    const hist = displayHistory;
     const ma5 = calculateMA(hist, 5);
     const ma10 = calculateMA(hist, 10);
     const ma20 = calculateMA(hist, 20);
@@ -271,7 +277,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         return padding.subTop + 10 + (1 - (val - min) / range) * (h - padding.bottom - (padding.subTop + 10));
     };
 
-    // 2. Draw Grid (Subtle)
+    // 2. Draw Grid
     ctx.strokeStyle = '#f1f5f9';
     ctx.lineWidth = 1;
     for (let i = 0; i <= 4; i++) {
@@ -291,9 +297,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     const candleW = Math.max(1, stepX * 0.7);
     hist.forEach((d, i) => {
         const x = padding.left + i * stepX;
-        const color = d.close >= d.open ? '#eb4432' : '#009b72'; // Chinese style: Red Up, Green Down
+        const color = d.close >= d.open ? '#eb4432' : '#009b72'; 
         ctx.strokeStyle = color;
-        ctx.fillStyle = d.close >= d.open ? '#FFFFFF' : color; // Hollow red for up is common in CN, but let's use solid for clarity
 
         // Wick
         ctx.beginPath();
@@ -301,13 +306,13 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         ctx.lineTo(x + candleW / 2, getPriceY(d.low));
         ctx.stroke();
 
-        // Body (Always solid for better readability here)
+        // Body 
         ctx.fillStyle = color;
         const bodyY = getPriceY(Math.max(d.open, d.close));
         const bodyH = Math.max(1, Math.abs(getPriceY(d.open) - getPriceY(d.close)));
         ctx.fillRect(x, bodyY, candleW, bodyH);
 
-        // Date labels
+        // Date labels (approx 6 labels)
         if (i % Math.floor(hist.length / 6) === 0) {
             ctx.fillStyle = '#94a3b8';
             ctx.textAlign = 'center';
@@ -375,6 +380,15 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
             if(i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
         });
         ctx.stroke();
+    } else if (indicator === 'AMT') {
+        const turnover = hist.map(d => d.volume * d.close);
+        const maxAmt = Math.max(...turnover);
+        hist.forEach((d, i) => {
+            const x = padding.left + i * stepX;
+            const vH = (turnover[i] / maxAmt) * (h - padding.bottom - padding.subTop - 10);
+            ctx.fillStyle = 'rgba(6,182,212,0.6)';
+            ctx.fillRect(x, h - padding.bottom - vH, candleW, vH);
+        });
     }
 
     // 6. Draw Highly Significant Backtest Signals
@@ -391,36 +405,36 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                 if (trade.type === 'BUY') {
                     // Bright Red Circle with B
                     ctx.fillStyle = '#eb4432';
-                    ctx.beginPath(); ctx.arc(x, y + 25, 10, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x, y + 25, 12, 0, Math.PI*2); ctx.fill();
+                    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.stroke();
                     ctx.fillStyle = '#FFFFFF';
-                    ctx.fillText('B', x, y + 29);
+                    ctx.fillText('B', x, y + 30);
                     // Connection line
-                    ctx.strokeStyle = '#eb4432';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 15); ctx.stroke();
+                    ctx.strokeStyle = '#eb4432'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + 13); ctx.stroke();
                 } else {
                     // Bright Green Circle with S
                     ctx.fillStyle = '#009b72';
-                    ctx.beginPath(); ctx.arc(x, y - 25, 10, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(x, y - 25, 12, 0, Math.PI*2); ctx.fill();
+                    ctx.strokeStyle = '#FFFFFF'; ctx.lineWidth = 2; ctx.stroke();
                     ctx.fillStyle = '#FFFFFF';
-                    ctx.fillText('S', x, y - 21);
+                    ctx.fillText('S', x, y - 20);
                     // Connection line
-                    ctx.strokeStyle = '#009b72';
-                    ctx.lineWidth = 1;
-                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 15); ctx.stroke();
+                    ctx.strokeStyle = '#009b72'; ctx.lineWidth = 2;
+                    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y - 13); ctx.stroke();
                 }
             }
         });
     }
 
-  }, [filteredHistory, btResult, indicator, lang]);
+  }, [displayHistory, btResult, indicator, lang]);
 
   return (
-    <div className="h-full flex flex-col bg-[#f8fafc] custom-scrollbar p-6">
+    <div className="h-full flex flex-col bg-[#f0f2f5] custom-scrollbar p-6">
       <div className="max-w-7xl mx-auto w-full space-y-6">
         
         {/* Header Search */}
-        <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-slate-200 pb-6">
+        <div className="flex flex-col md:flex-row gap-4 items-center justify-between border-b border-slate-300 pb-6">
             <h2 className="text-3xl font-tech font-bold text-slate-900 tracking-widest uppercase">{t.title}</h2>
             <div className="flex bg-white border border-slate-300 p-1 shadow-sm">
                 <input value={code} onChange={e => setCode(e.target.value)} placeholder={t.placeholder} className="bg-transparent text-slate-900 px-4 py-2 font-code focus:outline-none uppercase w-64" onKeyDown={e=>e.key==='Enter' && handleSearch()} />
@@ -434,15 +448,15 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
         {!data ? (
             <div className="h-96 flex flex-col items-center justify-center opacity-40">
-                <div className="w-16 h-16 border-2 border-slate-200 rounded-full animate-spin mb-4 border-t-slate-900"></div>
+                <div className="w-16 h-16 border-2 border-slate-300 rounded-full animate-spin mb-4 border-t-slate-900"></div>
                 <div className="font-code text-sm tracking-widest text-slate-900">{t.noData}</div>
             </div>
         ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20">
                 
-                {/* Left: Chart & Indicators */}
+                {/* Left: Chart Area */}
                 <div className="lg:col-span-8 space-y-6">
-                    <div className="bg-white border border-slate-200 p-6 relative overflow-hidden shadow-sm">
+                    <div className="bg-white border border-slate-300 p-6 relative overflow-hidden shadow-sm">
                         <div className="flex justify-between items-start mb-4">
                             <div>
                                 <h3 className="text-2xl font-tech font-bold text-slate-900">{data.name} <span className="text-sm font-code text-slate-400 ml-2">{data.code}</span></h3>
@@ -461,33 +475,33 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                             </div>
                             
                             <div className="flex gap-1">
-                                {(['VOL', 'MACD'] as IndicatorType[]).map(type => (
-                                    <button key={type} onClick={() => setIndicator(type)} className={`px-4 py-1.5 text-[10px] font-tech border transition-all ${indicator === type ? 'bg-slate-900 text-white border-slate-900' : 'text-slate-400 border-slate-200 hover:border-slate-400 hover:text-slate-900'}`}>
+                                {(['VOL', 'MACD', 'AMT'] as IndicatorType[]).map(type => (
+                                    <button key={type} onClick={() => setIndicator(type)} className={`px-4 py-1.5 text-[10px] font-tech border transition-all ${indicator === type ? 'bg-slate-900 text-white border-slate-900 shadow-md' : 'text-slate-400 border-slate-200 hover:border-slate-400 hover:text-slate-900'}`}>
                                         {t[type.toLowerCase() as keyof typeof t] as string}
                                     </button>
                                 ))}
                             </div>
                         </div>
 
-                        <div className="relative h-[550px] w-full bg-white border border-slate-100">
+                        {/* Chart Container - Fixed White */}
+                        <div className="relative h-[550px] w-full bg-white border border-slate-100 rounded-sm">
                             <canvas ref={mainCanvasRef} className="w-full h-full cursor-crosshair" />
                         </div>
                     </div>
 
-                    {/* Backtest Config & Docs */}
-                    <div className="bg-white border border-slate-200 p-6 shadow-sm">
+                    {/* Backtest Section */}
+                    <div className="bg-white border border-slate-300 p-6 shadow-sm">
                         <div className="flex items-center justify-between mb-6 border-b border-slate-100 pb-3">
                             <h4 className="font-tech text-slate-900 font-bold uppercase tracking-widest flex items-center gap-2">
                                 <span className="w-2 h-2 bg-slate-900 animate-pulse"></span>
                                 {t.backtest}
                             </h4>
-                            <button onClick={handleBacktest} disabled={btLoading} className="bg-slate-900 text-white px-8 py-2 text-xs font-tech font-bold hover:bg-black transition-all clip-button">
-                                {btLoading ? 'PROCESSING...' : t.runBt}
+                            <button onClick={handleBacktest} disabled={btLoading} className="bg-slate-900 text-white px-8 py-2 text-xs font-tech font-bold hover:bg-black transition-all clip-button shadow-lg">
+                                {btLoading ? 'CALCULATING...' : t.runBt}
                             </button>
                         </div>
 
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                             {/* Form */}
                              <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="space-y-1">
@@ -514,7 +528,6 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                                 </div>
                              </div>
 
-                             {/* Documentation */}
                              <div className="bg-slate-50 p-4 border-l-2 border-slate-300">
                                 <h5 className="text-[10px] font-tech text-slate-500 uppercase mb-2">{t.strategyDesc}</h5>
                                 <p className="text-[11px] text-slate-600 font-code leading-relaxed">
@@ -525,21 +538,21 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
 
                         {btResult && (
                             <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8 animate-in fade-in zoom-in duration-300">
-                                <div className="bg-slate-50 p-4 border-l-2 border-slate-900">
+                                <div className="bg-slate-50 p-4 border-l-2 border-slate-900 shadow-sm">
                                     <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.finalValue}</div>
                                     <div className="text-xl font-code font-bold text-slate-900">{btResult.final_value.toFixed(2)}</div>
                                 </div>
-                                <div className="bg-slate-50 p-4 border-l-2 border-rose-500">
+                                <div className="bg-slate-50 p-4 border-l-2 border-rose-500 shadow-sm">
                                     <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.totalReturn}</div>
                                     <div className={`text-xl font-code font-bold ${btResult.total_return >= 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                                         {(btResult.total_return * 100).toFixed(2)}%
                                     </div>
                                 </div>
-                                <div className="bg-slate-50 p-4 border-l-2 border-orange-500">
+                                <div className="bg-slate-50 p-4 border-l-2 border-orange-500 shadow-sm">
                                     <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.maxDD}</div>
                                     <div className="text-xl font-code font-bold text-orange-600">{(btResult.max_drawdown * 100).toFixed(2)}%</div>
                                 </div>
-                                <div className="bg-slate-50 p-4 border-l-2 border-emerald-500">
+                                <div className="bg-slate-50 p-4 border-l-2 border-emerald-500 shadow-sm">
                                     <div className="text-[10px] text-slate-400 font-tech mb-1 uppercase">{t.sharpe}</div>
                                     <div className="text-xl font-code font-bold text-emerald-600">{btResult.sharpe.toFixed(3)}</div>
                                 </div>
@@ -548,10 +561,9 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                     </div>
                 </div>
 
-                {/* Right: AI & Trades */}
+                {/* Right Area: AI & Trades */}
                 <div className="lg:col-span-4 space-y-6">
-                    {/* AI DIAGNOSTICS */}
-                    <div className="bg-white border border-slate-200 p-6 relative overflow-hidden group shadow-sm">
+                    <div className="bg-white border border-slate-300 p-6 relative overflow-hidden group shadow-sm">
                         <h4 className="font-tech text-slate-900 font-bold uppercase tracking-widest mb-4 flex items-center gap-2">
                              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                              {t.aiAnalyze}
@@ -590,8 +602,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                         )}
                     </div>
 
-                    {/* TRADE LOG */}
-                    <div className="bg-white border border-slate-200 p-6 flex-1 flex flex-col h-[500px] shadow-sm">
+                    <div className="bg-white border border-slate-300 p-6 flex-1 flex flex-col h-[500px] shadow-sm">
                         <h4 className="font-tech text-slate-400 font-bold uppercase tracking-widest mb-4">{t.trades}</h4>
                         <div className="flex-1 overflow-y-auto custom-scrollbar space-y-2">
                              {btResult?.trades && btResult.trades.length > 0 ? (
