@@ -83,7 +83,7 @@ app.post('/api/process', async (req, res) => {
   if (targetFormat === 'original') targetFormat = ['bmp', 'png', 'webp', 'gif', 'avif', 'tiff'].includes(originalExt) ? originalExt : 'jpeg';
   const outExt = targetFormat === 'jpeg' ? 'jpg' : targetFormat;
   const outFilename = `processed_${uuidv4()}.${outExt}`;
-  const outputPath = path.join(PROCESSED_DIR, outFilename);
+  const outputPath = path.join(PROCESCESSED_DIR, outFilename);
   const filePath = path.join(UPLOAD_DIR, fileName);
 
   try {
@@ -238,7 +238,7 @@ app.post('/api/analyze-stock', async (req, res) => {
       } catch (e) { return null; }
   }
 
-  async function fetchHistoricalKLines(ticker, limit = 180) {
+  async function fetchHistoricalKLines(ticker, limit = 800) { // INCREASED TO 800 for ~3 years
       const secid = getSecId(ticker);
       if (!secid) return [];
       try {
