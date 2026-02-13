@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { StockAnalysisResult, Language, OHLC, BacktestResult, Trade } from '../types';
 
 interface ExtendedStockResult extends StockAnalysisResult {
@@ -11,11 +11,16 @@ interface StockDashboardProps {
   lang: Language;
 }
 
+type IndicatorType = 'VOL' | 'MACD' | 'AMT';
+
 export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
   const [code, setCode] = useState('');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ExtendedStockResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // Indicator Switching
+  const [indicator, setIndicator] = useState<IndicatorType>('VOL');
 
   // AI Analysis State
   const [aiLoading, setAiLoading] = useState(false);
@@ -49,7 +54,22 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       trades: "TRADE LOG",
       loading: "SYNCING...",
       aiHint: "Click to generate deep intelligence diagnostic.",
-      noData: "AWAITING TICKER INPUT"
+      noData: "AWAITING TICKER INPUT",
+      indicator: "SUB_INDICATOR",
+      vol: "VOL",
+      macd: "MACD",
+      amt: "AMT",
+      strategyDesc: "STRATEGY INTEL",
+      strategies: {
+          smaCross: {
+              name: "SMA Crossover (5/20)",
+              desc: "A trend-following strategy that generates a BUY signal when the 5-day SMA crosses above the 20-day SMA (Golden Cross) and a SELL signal when it crosses below (Death Cross)."
+          },
+          ma5Hold: {
+              name: "Buy & Hold Benchmark",
+              desc: "Enters a full position at the start of the timeframe and holds until the final day. Used to compare strategy performance against market alpha."
+          }
+      }
     },
     zh: {
       title: "量化数据核心",
@@ -71,7 +91,22 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
       trades: "交易明细",
       loading: "同步中...",
       aiHint: "点击发起深度 AI 智能诊断与形态预测",
-      noData: "等待输入代码信号"
+      noData: "等待输入代码信号",
+      indicator: "副图指标",
+      vol: "成交量",
+      macd: "指数平滑异同移动平均线",
+      amt: "成交额",
+      strategyDesc: "策略逻辑说明",
+      strategies: {
+          smaCross: {
+              name: "双均线交叉策略 (5/20)",
+              desc: "经典的趋势跟随策略。当 5 日均线向上穿越 20 日均线时触发“金叉”买入信号；反之，当 5 日均线向下穿越 20 日均线时触发“死叉”卖出信号。适合捕捉中短期趋势。"
+          },
+          ma5Hold: {
+              name: "买入持有 (基准测试)",
+              desc: "回测首日全仓买入并一直持有到期末。用于评估选定策略是否能够跑赢该标的的市场平均表现（Alpha 收益）。"
+          }
+      }
     }
   }[lang];
 
@@ -138,82 +173,214 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     }
   };
 
+  // --- INDICATOR CALCULATION HELPERS ---
+  const calculateMA = (data: OHLC[], period: number) => {
+    return data.map((_, i, arr) => {
+      if (i < period - 1) return null;
+      const slice = arr.slice(i - period + 1, i + 1);
+      return slice.reduce((sum, item) => sum + item.close, 0) / period;
+    });
+  };
+
+  const calculateMACD = (data: OHLC[]) => {
+      const ema = (arr: number[], period: number) => {
+          const k = 2 / (period + 1);
+          let emaArr = [arr[0]];
+          for (let i = 1; i < arr.length; i++) {
+              emaArr.push(arr[i] * k + emaArr[i-1] * (1 - k));
+          }
+          return emaArr;
+      };
+      const closes = data.map(d => d.close);
+      const ema12 = ema(closes, 12);
+      const ema26 = ema(closes, 26);
+      const diff = ema12.map((val, i) => val - ema26[i]);
+      const dea = ema(diff, 9);
+      const hist = diff.map((val, i) => (val - dea[i]) * 2);
+      return { diff, dea, hist };
+  };
+
   useEffect(() => {
     if (!data || !mainCanvasRef.current) return;
     const canvas = mainCanvasRef.current;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    const w = canvas.width;
-    const h = canvas.height;
-    const padding = { left: 60, right: 40, top: 40, bottom: 40 };
+    // Use device pixel ratio for sharper rendering
+    const dpr = window.devicePixelRatio || 1;
+    const logicalW = canvas.clientWidth;
+    const logicalH = canvas.clientHeight;
+    canvas.width = logicalW * dpr;
+    canvas.height = logicalH * dpr;
+    ctx.scale(dpr, dpr);
+
+    const w = logicalW;
+    const h = logicalH;
+    const padding = { left: 60, right: 60, top: 40, bottom: 40, subTop: 0.7 * h };
     ctx.clearRect(0, 0, w, h);
 
     const hist = data.history;
-    const prices = hist.map(d => d.close);
-    const maxP = Math.max(...hist.map(d => d.high)) * 1.02;
-    const minP = Math.min(...hist.map(d => d.low)) * 0.98;
-    const range = maxP - minP;
+    const ma5 = calculateMA(hist, 5);
+    const ma10 = calculateMA(hist, 10);
+    const ma20 = calculateMA(hist, 20);
+    const ma30 = calculateMA(hist, 30);
+    const macd = calculateMACD(hist);
+
+    const maxPrice = Math.max(...hist.map(d => d.high)) * 1.02;
+    const minPrice = Math.min(...hist.map(d => d.low)) * 0.98;
+    const priceRange = maxPrice - minPrice;
     const stepX = (w - padding.left - padding.right) / hist.length;
 
-    const getY = (p: number) => padding.top + (1 - (p - minP) / range) * (h - padding.top - padding.bottom);
+    const getPriceY = (p: number) => padding.top + (1 - (p - minPrice) / priceRange) * (padding.subTop - 20 - padding.top);
+    const getSubY = (val: number, max: number, min: number = 0) => {
+        const range = max - min;
+        return padding.subTop + 20 + (1 - (val - min) / range) * (h - padding.bottom - (padding.subTop + 20));
+    };
 
-    // Grid
+    // --- DRAW BACKGROUND & GRID ---
+    ctx.fillStyle = '#020617';
+    ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = 'rgba(6,182,212,0.1)';
-    ctx.beginPath();
-    for (let i = 0; i <= 4; i++) {
-        const y = padding.top + (i/4) * (h - padding.top - padding.bottom);
+    ctx.lineWidth = 1;
+
+    // Horiz Lines
+    for (let i = 0; i <= 5; i++) {
+        const y = padding.top + (i/5) * (padding.subTop - 20 - padding.top);
+        ctx.beginPath();
         ctx.moveTo(padding.left, y);
         ctx.lineTo(w - padding.right, y);
+        ctx.stroke();
+        
+        // Price labels
+        ctx.fillStyle = '#475569';
+        ctx.font = '10px JetBrains Mono';
+        ctx.textAlign = 'left';
+        ctx.fillText((maxPrice - (i/5) * priceRange).toFixed(2), w - padding.right + 5, y + 3);
     }
-    ctx.stroke();
 
-    // Line Chart (Main)
-    ctx.strokeStyle = '#06b6d4';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
+    // --- DRAW K-LINES (CANDLESTICKS) ---
+    const candleW = Math.max(2, stepX * 0.7);
     hist.forEach((d, i) => {
         const x = padding.left + i * stepX;
-        const y = getY(d.close);
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
+        const color = d.close >= d.open ? '#f43f5e' : '#10b981'; // Red for Up, Green for Down
+        ctx.strokeStyle = color;
+        ctx.fillStyle = color;
 
-    // Volume (bottom)
-    const maxV = Math.max(...hist.map(d => d.volume));
-    hist.forEach((d, i) => {
-        const x = padding.left + i * stepX;
-        const vH = (d.volume / maxV) * 50;
-        ctx.fillStyle = d.close >= d.open ? 'rgba(244,63,94,0.3)' : 'rgba(16,185,129,0.3)';
-        ctx.fillRect(x, h - padding.bottom - vH, stepX * 0.8, vH);
+        // Wick
+        ctx.beginPath();
+        ctx.moveTo(x + candleW / 2, getPriceY(d.high));
+        ctx.lineTo(x + candleW / 2, getPriceY(d.low));
+        ctx.stroke();
+
+        // Body
+        const bodyY = getPriceY(Math.max(d.open, d.close));
+        const bodyH = Math.max(1, Math.abs(getPriceY(d.open) - getPriceY(d.close)));
+        ctx.fillRect(x, bodyY, candleW, bodyH);
+
+        // Date X-Axis
+        if (i % Math.floor(hist.length / 5) === 0) {
+            ctx.fillStyle = '#475569';
+            ctx.textAlign = 'center';
+            ctx.fillText(d.date.substring(5), x + candleW/2, h - 10);
+            ctx.beginPath();
+            ctx.moveTo(x + candleW/2, padding.top);
+            ctx.lineTo(x + candleW/2, h - padding.bottom);
+            ctx.stroke();
+        }
     });
 
-    // Draw Backtest Trades if available
+    // --- DRAW MOVING AVERAGES ---
+    const drawMA = (ma: (number | null)[], color: string) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        let first = true;
+        ma.forEach((val, i) => {
+            if (val === null) return;
+            const x = padding.left + i * stepX + candleW / 2;
+            const y = getPriceY(val);
+            if (first) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            first = false;
+        });
+        ctx.stroke();
+    };
+
+    drawMA(ma5, '#fbbf24'); // MA5 - Yellow
+    drawMA(ma10, '#a855f7'); // MA10 - Purple
+    drawMA(ma20, '#06b6d4'); // MA20 - Cyan
+    drawMA(ma30, '#ffffff'); // MA30 - White
+
+    // --- DRAW SUB-INDICATOR ---
+    if (indicator === 'VOL') {
+        const maxV = Math.max(...hist.map(d => d.volume));
+        hist.forEach((d, i) => {
+            const x = padding.left + i * stepX;
+            const vH = (d.volume / maxV) * (h - padding.bottom - padding.subTop - 20);
+            ctx.fillStyle = d.close >= d.open ? 'rgba(244,63,94,0.4)' : 'rgba(16,185,129,0.4)';
+            ctx.fillRect(x, h - padding.bottom - vH, candleW, vH);
+        });
+    } else if (indicator === 'MACD') {
+        const maxMacd = Math.max(...macd.diff, ...macd.dea, ...macd.hist.map(Math.abs));
+        const minMacd = Math.min(...macd.diff, ...macd.dea, ...macd.hist.map(v => -Math.abs(v)));
+        const zeroY = getSubY(0, maxMacd, minMacd);
+        
+        // Hist
+        hist.forEach((d, i) => {
+            const x = padding.left + i * stepX;
+            const val = macd.hist[i];
+            const y = getSubY(val, maxMacd, minMacd);
+            ctx.fillStyle = val >= 0 ? '#f43f5e' : '#10b981';
+            ctx.fillRect(x, Math.min(y, zeroY), candleW, Math.abs(y - zeroY));
+        });
+
+        // DIFF/DEA Lines
+        const drawLine = (arr: number[], color: string) => {
+            ctx.strokeStyle = color;
+            ctx.beginPath();
+            arr.forEach((v, i) => {
+                const x = padding.left + i * stepX + candleW/2;
+                const y = getSubY(v, maxMacd, minMacd);
+                if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+            });
+            ctx.stroke();
+        };
+        drawLine(macd.diff, '#ffffff');
+        drawLine(macd.dea, '#fbbf24');
+    } else if (indicator === 'AMT') {
+        const turnover = hist.map(d => d.volume * d.close);
+        const maxAmt = Math.max(...turnover);
+        hist.forEach((d, i) => {
+            const x = padding.left + i * stepX;
+            const vH = (turnover[i] / maxAmt) * (h - padding.bottom - padding.subTop - 20);
+            ctx.fillStyle = 'rgba(6,182,212,0.4)';
+            ctx.fillRect(x, h - padding.bottom - vH, candleW, vH);
+        });
+    }
+
+    // --- DRAW BACKTEST SIGNALS ---
     if (btResult && btResult.trades) {
         btResult.trades.forEach(trade => {
             const index = hist.findIndex(d => d.date === trade.date);
             if (index !== -1) {
-                const x = padding.left + index * stepX;
-                const y = getY(trade.price);
-                ctx.font = 'bold 12px Rajdhani';
-                ctx.textAlign = 'center';
+                const x = padding.left + index * stepX + candleW / 2;
+                const y = getPriceY(trade.price);
                 if (trade.type === 'BUY') {
                     ctx.fillStyle = '#f43f5e';
-                    ctx.fillText('B', x + 5, y - 10);
-                    ctx.beginPath(); ctx.arc(x + 5, y, 3, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.moveTo(x-5, y+15); ctx.lineTo(x+5, y+15); ctx.lineTo(x, y+5); ctx.closePath(); ctx.fill();
+                    ctx.fillText('B', x-3, y + 25);
                 } else {
                     ctx.fillStyle = '#10b981';
-                    ctx.fillText('S', x + 5, y + 20);
-                    ctx.beginPath(); ctx.arc(x + 5, y, 3, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.moveTo(x-5, y-15); ctx.lineTo(x+5, y-15); ctx.lineTo(x, y-5); ctx.closePath(); ctx.fill();
+                    ctx.fillText('S', x-3, y - 20);
                 }
             }
         });
     }
 
-  }, [data, btResult]);
+  }, [data, btResult, indicator, lang]);
 
   return (
-    <div className="h-full flex flex-col bg-slate-950/20 custom-scrollbar p-6">
+    <div className="h-full flex flex-col bg-[#020617] custom-scrollbar p-6">
       <div className="max-w-7xl mx-auto w-full space-y-6">
         
         {/* Header Search */}
@@ -237,33 +404,41 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
         ) : (
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-20">
                 
-                {/* Left: Chart & Stats */}
+                {/* Left: Chart & Indicators */}
                 <div className="lg:col-span-8 space-y-6">
                     <div className="bg-slate-900/60 border border-slate-800 p-6 relative overflow-hidden group">
-                        <div className="absolute top-0 left-0 w-full h-0.5 bg-cyan-500 opacity-30"></div>
-                        <div className="flex justify-between items-start mb-6">
+                        <div className="flex justify-between items-start mb-4">
                             <div>
                                 <h3 className="text-2xl font-tech font-bold text-white">{data.name} <span className="text-sm font-code text-cyan-500 ml-2">{data.code}</span></h3>
-                                <div className="text-4xl font-code font-black mt-2">
-                                    {data.currentPrice.toFixed(2)} 
-                                    <span className={`text-lg ml-4 ${data.changePercent >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                                        {data.changePercent >= 0 ? '▲' : '▼'} {Math.abs(data.changePercent)}%
+                                <div className="flex items-center gap-4 mt-1">
+                                    <span className={`text-2xl font-code font-black ${data.changePercent >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>{data.currentPrice.toFixed(2)}</span>
+                                    <span className={`text-sm font-bold ${data.changePercent >= 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                                        {data.changePercent >= 0 ? '+' : ''}{data.changePercent.toFixed(2)}%
                                     </span>
+                                    <div className="flex gap-2 text-[9px] font-code ml-4">
+                                        <span className="text-yellow-400">MA5</span>
+                                        <span className="text-purple-400">MA10</span>
+                                        <span className="text-cyan-400">MA20</span>
+                                        <span className="text-white">MA30</span>
+                                    </div>
                                 </div>
                             </div>
-                            <div className="grid grid-cols-2 gap-x-8 gap-y-2 text-[10px] font-code uppercase">
-                                <div className="text-slate-500">PE: <span className="text-white">{data.pe}</span></div>
-                                <div className="text-slate-500">PB: <span className="text-white">{data.pb}</span></div>
-                                <div className="text-slate-500">MK: <span className="text-white">{data.market}</span></div>
+                            
+                            <div className="flex gap-1">
+                                {(['VOL', 'MACD', 'AMT'] as IndicatorType[]).map(type => (
+                                    <button key={type} onClick={() => setIndicator(type)} className={`px-3 py-1 text-[10px] font-tech border transition-all ${indicator === type ? 'bg-cyan-500 text-black border-cyan-400' : 'text-slate-500 border-slate-700 hover:border-cyan-500'}`}>
+                                        {t[type.toLowerCase() as keyof typeof t] as string}
+                                    </button>
+                                ))}
                             </div>
                         </div>
 
-                        <div className="relative h-[400px] w-full">
-                            <canvas ref={mainCanvasRef} width={800} height={400} className="w-full h-full" />
+                        <div className="relative h-[550px] w-full bg-[#020617] border border-slate-800">
+                            <canvas ref={mainCanvasRef} className="w-full h-full cursor-crosshair" />
                         </div>
                     </div>
 
-                    {/* Backtest Section */}
+                    {/* Backtest Config & Docs */}
                     <div className="bg-slate-900/60 border border-slate-800 p-6">
                         <div className="flex items-center justify-between mb-6 border-b border-slate-800 pb-3">
                             <h4 className="font-tech text-cyan-400 font-bold uppercase tracking-widest flex items-center gap-2">
@@ -271,30 +446,43 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                                 {t.backtest}
                             </h4>
                             <button onClick={handleBacktest} disabled={btLoading} className="bg-cyan-900/30 border border-cyan-500 text-cyan-400 px-6 py-1.5 text-xs font-tech font-bold hover:bg-cyan-500 hover:text-white transition-all">
-                                {btLoading ? 'CALCULATING...' : t.runBt}
+                                {btLoading ? 'PROCESSING...' : t.runBt}
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
-                             <div className="space-y-1">
-                                <label className="text-[10px] text-slate-500 font-code uppercase">{t.capital}</label>
-                                <input type="number" value={btConfig.capital} onChange={e=>setBtConfig({...btConfig, capital: Number(e.target.value)})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                             {/* Form */}
+                             <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.capital}</label>
+                                        <input type="number" value={btConfig.capital} onChange={e=>setBtConfig({...btConfig, capital: Number(e.target.value)})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
+                                    </div>
+                                    <div className="space-y-1">
+                                        <label className="text-[10px] text-slate-500 font-code uppercase">{t.commission}</label>
+                                        <input type="number" step="0.0001" value={btConfig.commission} onChange={e=>setBtConfig({...btConfig, commission: Number(e.target.value)})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
+                                    </div>
+                                </div>
+                                <div className="space-y-1">
+                                    <label className="text-[10px] text-slate-500 font-code uppercase">{t.strategy}</label>
+                                    <select value={btConfig.strategy} onChange={e=>setBtConfig({...btConfig, strategy: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500">
+                                        <option value="smaCross">{t.strategies.smaCross.name}</option>
+                                        <option value="ma5Hold">{t.strategies.ma5Hold.name}</option>
+                                    </select>
+                                </div>
                              </div>
-                             <div className="space-y-1">
-                                <label className="text-[10px] text-slate-500 font-code uppercase">{t.commission}</label>
-                                <input type="number" step="0.0001" value={btConfig.commission} onChange={e=>setBtConfig({...btConfig, commission: Number(e.target.value)})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
-                             </div>
-                             <div className="space-y-1 md:col-span-2">
-                                <label className="text-[10px] text-slate-500 font-code uppercase">{t.strategy}</label>
-                                <select value={btConfig.strategy} onChange={e=>setBtConfig({...btConfig, strategy: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500">
-                                    <option value="smaCross">SMA CROSSOVER (5/20)</option>
-                                    <option value="ma5Hold">BUY AND HOLD (BENCHMARK)</option>
-                                </select>
+
+                             {/* Documentation */}
+                             <div className="bg-black/40 p-4 border-l-2 border-cyan-500/30">
+                                <h5 className="text-[10px] font-tech text-cyan-500 uppercase mb-2">{t.strategyDesc}</h5>
+                                <p className="text-[11px] text-slate-400 font-code leading-relaxed">
+                                    {t.strategies[btConfig.strategy as keyof typeof t.strategies]?.desc}
+                                </p>
                              </div>
                         </div>
 
                         {btResult && (
-                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 animate-in fade-in zoom-in duration-300">
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-8 animate-in fade-in zoom-in duration-300">
                                 <div className="bg-black/40 p-4 border-l-2 border-cyan-500">
                                     <div className="text-[10px] text-slate-500 font-tech mb-1 uppercase">{t.finalValue}</div>
                                     <div className="text-xl font-code font-bold text-white">{btResult.final_value.toFixed(2)}</div>
@@ -332,7 +520,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                             <div className="text-center py-6">
                                 <p className="text-xs text-slate-500 font-code mb-6 uppercase tracking-tight">{t.aiHint}</p>
                                 <button onClick={handleAiAnalysis} disabled={aiLoading} className="w-full py-3 bg-purple-900/20 border border-purple-500/50 text-purple-400 font-tech font-bold uppercase tracking-widest hover:bg-purple-600 hover:text-white transition-all relative overflow-hidden group">
-                                    <span className="relative z-10">{aiLoading ? 'PROCESSING NEURAL NETWORK...' : 'START DIAGNOSTIC'}</span>
+                                    <span className="relative z-10">{aiLoading ? 'SYNCING NEURAL NETWORK...' : 'START DIAGNOSTIC'}</span>
                                     {aiLoading && <div className="absolute inset-0 bg-purple-500/10 animate-pulse"></div>}
                                 </button>
                             </div>
