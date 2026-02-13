@@ -34,7 +34,6 @@ export interface ProcessOptions {
   rawWidth?: number;
   rawHeight?: number;
   rawPixelFormat?: RawPixelFormat;
-  // AI Options
   aiTask: AITaskType;
   aiPrompt: string;
 }
@@ -49,19 +48,16 @@ export interface UploadResponse {
   height?: number;
   depth?: string;
   format?: string;
-  mimeType?: string; // Added for AI Core
+  mimeType?: string;
 }
 
 export interface ProcessResponse {
   url?: string;
   filename?: string;
   size?: number;
-  // AI Specific
   aiText?: string;
-  mimeType?: string; // video/mp4, image/png
+  mimeType?: string;
 }
-
-// --- Enhanced Stock Analysis Types ---
 
 export interface OHLC {
   date: string;
@@ -75,6 +71,27 @@ export interface OHLC {
   ma20?: number;
 }
 
+// --- Backtest Types ---
+
+export interface Trade {
+  date: string;
+  type: 'BUY' | 'SELL';
+  price: number;
+  shares: number;
+  cost: number;
+  value: number;
+  commission: number;
+}
+
+export interface BacktestResult {
+  final_value: number;
+  total_return: number;
+  max_drawdown: number;
+  sharpe: number;
+  equity_curve: { date: string; value: number }[];
+  trades: Trade[];
+}
+
 export interface StockAnalysisResult {
   code: string;
   market: string;
@@ -82,40 +99,33 @@ export interface StockAnalysisResult {
   currentPrice: number;
   changeAmount: number;
   changePercent: number;
-  // Fundamental
   pe: number;
   pb: number;
   turnoverRate: number;
   amplitude: number;
-  // Technical Stats
   trend: 'STRONG' | 'VOLATILE' | 'WEAK';
   support: number;
   resistance: number;
-  sentiment: number; // 0-100
-  // Textual Analysis
-  techAnalysis: string;
-  strategyAdvice: {
-    shortTerm: string; // 打板选手/短线
-    longTerm: string;  // 价值投资
-    trendFollower: string; // 均线/趋势
+  sentiment: number;
+  techAnalysis?: string;
+  strategyAdvice?: {
+    shortTerm: string;
+    longTerm: string;
+    trendFollower: string;
   };
-  risks: string[];
+  risks?: string[];
   history: OHLC[];
 }
 
-// --- AI CORE PRO TYPES ---
-
 export type ChatRole = 'user' | 'model' | 'system';
-
 export type AIWorkMode = 'general' | 'coder' | 'analyst' | 'creative';
-
 export interface AIAttachment {
   id: string;
   type: 'image' | 'file' | 'audio';
-  url: string; // Local preview or server URL
+  url: string;
   filename: string;
   mimeType: string;
-  data?: string; // Base64 for preview/upload
+  data?: string;
 }
 
 export interface ChatMessage {
@@ -125,7 +135,7 @@ export interface ChatMessage {
   timestamp: number;
   isThinking?: boolean;
   attachments?: AIAttachment[];
-  audioUrl?: string; // For TTS output
+  audioUrl?: string;
 }
 
 export interface ChatSession {
@@ -138,15 +148,12 @@ export interface ChatSession {
 }
 
 export type AIModelVersion = 
-  // Google
   | 'gemini-3-flash-preview' 
   | 'gemini-3-pro-preview' 
   | 'gemini-flash-latest' 
   | 'gemini-flash-lite-latest'
-  // OpenAI
   | 'gpt-4o'
   | 'gpt-4-turbo'
-  // Open Source / Local
   | 'llama-3-local'
   | 'mistral-local'
   | 'stable-diffusion-xl';
