@@ -604,6 +604,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                                                         }} className="bg-black border border-slate-700 text-white p-1 text-[10px]">
                                                             <option value="higher">High Open</option>
                                                             <option value="lower">Low Open</option>
+                                                            <option value="flat">Flat Open</option>
                                                             <option value="lower_and_down">Low Open & Close &lt; Open</option>
                                                         </select>
                                                         <span className="text-[10px] text-slate-600 font-code">then</span>

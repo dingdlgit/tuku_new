@@ -109,7 +109,7 @@ export interface CustomStrategy2Options {
   sellRules: {
     conditionDay: number;
     conditionField: 'open';
-    conditionType: 'higher' | 'lower' | 'lower_and_down'; // high open or low open
+    conditionType: 'higher' | 'lower' | 'lower_and_down' | 'flat'; // high open, low open, or flat open
     action: 'immediate' | 'close' | 'nextOpen' | 'nextClose';
     actionDayOffset: number;
   }[];

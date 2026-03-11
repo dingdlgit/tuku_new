@@ -174,11 +174,13 @@ export class BacktestEngine {
                     const prevClose = data[j-1]?.close || openPrice;
                     const isHigher = openPrice > prevClose;
                     const isLower = openPrice < prevClose;
+                    const isFlat = Math.abs(openPrice - prevClose) < 0.0001; // Handle floating point precision
 
                     let trigger = false;
                     if (rule.conditionType === 'higher' && isHigher) trigger = true;
-                    if (rule.conditionType === 'lower' && isLower) trigger = true;
-                    if (rule.conditionType === 'lower_and_down' && isLower && currentDay.close < currentDay.open) trigger = true;
+                    if (rule.conditionType === 'lower' && (isLower || isFlat)) trigger = true; // Default low to include flat
+                    if (rule.conditionType === 'flat' && isFlat) trigger = true;
+                    if (rule.conditionType === 'lower_and_down' && (isLower || isFlat) && currentDay.close < currentDay.open) trigger = true;
 
                     if (trigger) {
                       let sellPrice;
