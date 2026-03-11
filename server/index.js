@@ -251,6 +251,10 @@ app.post('/api/backtest', async (req, res) => {
             const result = BacktestEngine.customIntraday(history, initial_capital || 100000, commission_rate || 0.0003, options);
             return res.json(result);
         }
+        if (strategy === 'custom2') {
+            const result = BacktestEngine.customStrategy2(history, initial_capital || 100000, commission_rate || 0.0003, options.custom2);
+            return res.json(result);
+        }
 
         let strategyFn;
         if (strategy === 'smaCross') strategyFn = (data) => BacktestEngine.smaCross(data, 5, 20);

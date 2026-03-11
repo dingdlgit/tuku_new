@@ -100,6 +100,136 @@ export class BacktestEngine {
       return this.calculateMetrics(equity_curve, trades, initial_capital);
   }
 
+  /**
+   * Custom Strategy 2: Multi-Day Logic
+   */
+  static customStrategy2(data, initial_capital, commission_rate, options) {
+    const { trackingDays, conditions, buyDay, buyField, sellRules } = options;
+    let cash = initial_capital;
+    let shares = 0;
+    const equity_curve = [];
+    const trades = [];
+
+    const evaluateCondition = (cond, windowData) => {
+      const val1 = windowData[cond.day - 1]?.[cond.field];
+      const val2 = windowData[cond.compareDay - 1]?.[cond.compareField];
+      if (val1 === undefined || val2 === undefined) return false;
+
+      switch (cond.operator) {
+        case '>': return val1 > val2;
+        case '<': return val1 < val2;
+        case '>=': return val1 >= val2;
+        case '<=': return val1 <= val2;
+        case '==': return val1 === val2;
+        default: return false;
+      }
+    };
+
+    let i = 0;
+    while (i < data.length) {
+      const day = data[i];
+      equity_curve.push({ date: day.date, value: cash + shares * day.close });
+
+      if (shares === 0) {
+        // Check if we can start a tracking window
+        if (i + trackingDays <= data.length) {
+          const windowData = data.slice(i, i + trackingDays);
+          
+          // Evaluate screening conditions
+          let match = true;
+          if (conditions.length > 0) {
+            match = evaluateCondition(conditions[0], windowData);
+            for (let j = 0; j < conditions.length - 1; j++) {
+              const nextMatch = evaluateCondition(conditions[j+1], windowData);
+              if (conditions[j].logical === 'OR') {
+                match = match || nextMatch;
+              } else {
+                match = match && nextMatch;
+              }
+            }
+          }
+
+          if (match) {
+            // Buy condition
+            const absoluteBuyDayIdx = i + (buyDay - 1);
+            if (absoluteBuyDayIdx < data.length) {
+              const buyDayData = data[absoluteBuyDayIdx];
+              const price = buyDayData[buyField];
+              const commission = cash * commission_rate;
+              const net_cash = cash - commission;
+              shares = net_cash / price;
+              cash = 0;
+              trades.push({ date: buyDayData.date, type: 'BUY', price, shares, cost: net_cash + commission, commission, value: net_cash });
+              
+              // Now look for sell
+              let sellFound = false;
+              for (let j = absoluteBuyDayIdx; j < data.length; j++) {
+                const currentDay = data[j];
+                const relativeDayIdx = j - i + 1; // 1-indexed relative to window start
+
+                // Check sell rules
+                for (const rule of sellRules) {
+                  if (relativeDayIdx === rule.conditionDay) {
+                    const openPrice = currentDay.open;
+                    const prevClose = data[j-1]?.close || openPrice;
+                    const isHigher = openPrice > prevClose;
+                    const isLower = openPrice < prevClose;
+
+                    let trigger = false;
+                    if (rule.conditionType === 'higher' && isHigher) trigger = true;
+                    if (rule.conditionType === 'lower' && isLower) trigger = true;
+                    if (rule.conditionType === 'lower_and_down' && isLower && currentDay.close < currentDay.open) trigger = true;
+
+                    if (trigger) {
+                      let sellPrice;
+                      if (rule.action === 'immediate') sellPrice = currentDay.open;
+                      else if (rule.action === 'close') sellPrice = currentDay.close;
+                      else if (rule.action === 'nextOpen' && data[j+1]) sellPrice = data[j+1].open;
+                      else if (rule.action === 'nextClose' && data[j+1]) sellPrice = data[j+1].close;
+                      
+                      if (sellPrice) {
+                        const sellDate = (rule.action.startsWith('next') && data[j+1]) ? data[j+1].date : currentDay.date;
+                        const raw_value = shares * sellPrice;
+                        const sellCommission = raw_value * commission_rate;
+                        cash = raw_value - sellCommission;
+                        trades.push({ date: sellDate, type: 'SELL', price: sellPrice, shares, cost: raw_value, commission: sellCommission, value: cash });
+                        shares = 0;
+                        sellFound = true;
+                        i = j; // Move index to sell day
+                        break;
+                      }
+                    }
+                  }
+                }
+                if (sellFound) break;
+                
+                // If we reached the end of data without selling, sell at last available close
+                if (j === data.length - 1 && shares > 0) {
+                  const sellPrice = currentDay.close;
+                  const raw_value = shares * sellPrice;
+                  const sellCommission = raw_value * commission_rate;
+                  cash = raw_value - sellCommission;
+                  trades.push({ date: currentDay.date, type: 'SELL', price: sellPrice, shares, cost: raw_value, commission: sellCommission, value: cash });
+                  shares = 0;
+                  i = j;
+                }
+              }
+            }
+          }
+        }
+      }
+      i++;
+    }
+
+    // Fill remaining equity curve if any
+    while (equity_curve.length < data.length) {
+        const day = data[equity_curve.length];
+        equity_curve.push({ date: day.date, value: cash });
+    }
+
+    return this.calculateMetrics(equity_curve, trades, initial_capital);
+  }
+
   static calculateMetrics(equity_curve, trades, initial_capital) {
     const final_value = equity_curve[equity_curve.length - 1].value;
     const total_return = (final_value - initial_capital) / initial_capital;

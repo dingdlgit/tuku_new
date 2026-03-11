@@ -92,6 +92,29 @@ export interface BacktestResult {
   trades: Trade[];
 }
 
+export interface StrategyCondition {
+  day: number;
+  field: 'open' | 'close' | 'high' | 'low';
+  operator: '>' | '<' | '>=' | '<=' | '==';
+  compareDay: number;
+  compareField: 'open' | 'close' | 'high' | 'low';
+  logical: 'AND' | 'OR';
+}
+
+export interface CustomStrategy2Options {
+  trackingDays: number;
+  conditions: StrategyCondition[];
+  buyDay: number;
+  buyField: 'open' | 'close';
+  sellRules: {
+    conditionDay: number;
+    conditionField: 'open';
+    conditionType: 'higher' | 'lower' | 'lower_and_down'; // high open or low open
+    action: 'immediate' | 'close' | 'nextOpen' | 'nextClose';
+    actionDayOffset: number;
+  }[];
+}
+
 export interface StockAnalysisResult {
   code: string;
   market: string;

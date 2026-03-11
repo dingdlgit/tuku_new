@@ -34,7 +34,19 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
     startDate: '', 
     endDate: '',
     frequency: 'daily',
-    targetProfit: 0.5
+    targetProfit: 0.5,
+    custom2: {
+      trackingDays: 3,
+      conditions: [
+        { day: 1, field: 'close', operator: '>', compareDay: 3, compareField: 'close', logical: 'AND' }
+      ],
+      buyDay: 3,
+      buyField: 'close',
+      sellRules: [
+        { conditionDay: 4, conditionField: 'open', conditionType: 'higher', action: 'immediate', actionDayOffset: 0 },
+        { conditionDay: 4, conditionField: 'open', conditionType: 'lower', action: 'close', actionDayOffset: 0 }
+      ]
+    }
   });
 
   const [displayHistory, setDisplayHistory] = useState<OHLC[]>([]);
@@ -91,6 +103,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
           ma5Hold: {
               name: "Buy & Hold Benchmark",
               desc: "Enters a full position at the start and holds until the end."
+          },
+          custom2: {
+              name: "Custom Strategy 2 (Multi-Day Logic)",
+              desc: "A complex strategy allowing multi-day tracking, custom screening conditions, and conditional buy/sell rules based on price action."
           }
       }
     },
@@ -144,6 +160,10 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
           ma5Hold: {
               name: "买入持有 (基准测试)",
               desc: "回测首日全仓买入并一直持有到期末。"
+          },
+          custom2: {
+              name: "自定义策略2 (多日逻辑)",
+              desc: "支持多日跟踪、自定义筛选条件（如第一天收盘>第三天收盘）、自定义买入点及复杂的条件卖出逻辑。"
           }
       }
     }
@@ -185,7 +205,8 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
           strategy: btConfig.strategy,
           options: {
               frequency: btConfig.frequency,
-              targetProfit: btConfig.targetProfit / 100 // Convert to decimal
+              targetProfit: btConfig.targetProfit / 100, // Convert to decimal
+              custom2: btConfig.strategy === 'custom2' ? btConfig.custom2 : undefined
           }
         })
       });
@@ -440,6 +461,7 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                                         <select value={btConfig.strategy} onChange={e=>setBtConfig({...btConfig, strategy: e.target.value})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500">
                                             <option value="smaCross">{t.strategies.smaCross.name}</option>
                                             <option value="custom1">{t.strategies.custom1.name}</option>
+                                            <option value="custom2">{t.strategies.custom2.name}</option>
                                             <option value="ma5Hold">{t.strategies.ma5Hold.name}</option>
                                         </select>
                                     </div>
@@ -463,6 +485,145 @@ export const StockDashboard: React.FC<StockDashboardProps> = ({ lang }) => {
                                         <div className="space-y-1">
                                             <label className="text-[10px] text-slate-500 font-code uppercase">{t.targetProfit}</label>
                                             <input type="number" step="0.1" value={btConfig.targetProfit} onChange={e=>setBtConfig({...btConfig, targetProfit: Number(e.target.value)})} className="w-full bg-black border border-slate-700 text-white p-2 text-xs focus:border-cyan-500" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                {btConfig.strategy === 'custom2' && (
+                                    <div className="space-y-4 animate-in slide-in-from-top-2 duration-300 bg-slate-900/40 p-4 border border-slate-800">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-[10px] text-cyan-500 font-tech uppercase">Tracking Days</label>
+                                            <input type="number" min="1" max="10" value={btConfig.custom2.trackingDays} onChange={e => setBtConfig({...btConfig, custom2: {...btConfig.custom2, trackingDays: parseInt(e.target.value)}})} className="w-16 bg-black border border-slate-700 text-white p-1 text-xs text-center" />
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[10px] text-slate-500 font-tech uppercase">Screening Rules</label>
+                                                <button onClick={() => {
+                                                    const newConditions = [...btConfig.custom2.conditions, { day: 1, field: 'close', operator: '>', compareDay: 2, compareField: 'close', logical: 'AND' }];
+                                                    setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConditions as any}});
+                                                }} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-code">+ ADD RULE</button>
+                                            </div>
+                                            {btConfig.custom2.conditions.map((cond, idx) => (
+                                                <div key={idx} className="flex flex-wrap gap-2 items-center bg-black/30 p-2 border border-slate-800/50">
+                                                    <span className="text-[10px] text-slate-600 font-code">Day</span>
+                                                    <input type="number" value={cond.day} onChange={e => {
+                                                        const newConds = [...btConfig.custom2.conditions];
+                                                        newConds[idx].day = parseInt(e.target.value);
+                                                        setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConds}});
+                                                    }} className="w-10 bg-black border border-slate-700 text-white p-1 text-[10px]" />
+                                                    <select value={cond.field} onChange={e => {
+                                                        const newConds = [...btConfig.custom2.conditions];
+                                                        newConds[idx].field = e.target.value as any;
+                                                        setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConds}});
+                                                    }} className="bg-black border border-slate-700 text-white p-1 text-[10px]">
+                                                        <option value="open">Open</option>
+                                                        <option value="close">Close</option>
+                                                        <option value="high">High</option>
+                                                        <option value="low">Low</option>
+                                                    </select>
+                                                    <select value={cond.operator} onChange={e => {
+                                                        const newConds = [...btConfig.custom2.conditions];
+                                                        newConds[idx].operator = e.target.value as any;
+                                                        setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConds}});
+                                                    }} className="bg-black border border-slate-700 text-white p-1 text-[10px]">
+                                                        <option value=">">&gt;</option>
+                                                        <option value="<">&lt;</option>
+                                                        <option value=">=">&gt;=</option>
+                                                        <option value="<=">&lt;=</option>
+                                                        <option value="==">==</option>
+                                                    </select>
+                                                    <span className="text-[10px] text-slate-600 font-code">Day</span>
+                                                    <input type="number" value={cond.compareDay} onChange={e => {
+                                                        const newConds = [...btConfig.custom2.conditions];
+                                                        newConds[idx].compareDay = parseInt(e.target.value);
+                                                        setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConds}});
+                                                    }} className="w-10 bg-black border border-slate-700 text-white p-1 text-[10px]" />
+                                                    <select value={cond.compareField} onChange={e => {
+                                                        const newConds = [...btConfig.custom2.conditions];
+                                                        newConds[idx].compareField = e.target.value as any;
+                                                        setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConds}});
+                                                    }} className="bg-black border border-slate-700 text-white p-1 text-[10px]">
+                                                        <option value="open">Open</option>
+                                                        <option value="close">Close</option>
+                                                        <option value="high">High</option>
+                                                        <option value="low">Low</option>
+                                                    </select>
+                                                    {idx < btConfig.custom2.conditions.length - 1 && (
+                                                        <select value={cond.logical} onChange={e => {
+                                                            const newConds = [...btConfig.custom2.conditions];
+                                                            newConds[idx].logical = e.target.value as any;
+                                                            setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConds}});
+                                                        }} className="bg-cyan-900/30 border border-cyan-700 text-cyan-400 p-1 text-[10px] font-bold">
+                                                            <option value="AND">AND</option>
+                                                            <option value="OR">OR</option>
+                                                        </select>
+                                                    )}
+                                                    <button onClick={() => {
+                                                        const newConds = btConfig.custom2.conditions.filter((_, i) => i !== idx);
+                                                        setBtConfig({...btConfig, custom2: {...btConfig.custom2, conditions: newConds}});
+                                                    }} className="text-rose-500 hover:text-rose-400 ml-auto">×</button>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4 border-t border-slate-800 pt-3">
+                                            <div className="space-y-1">
+                                                <label className="text-[10px] text-slate-500 font-tech uppercase">Buy Condition</label>
+                                                <div className="flex gap-2">
+                                                    <input type="number" value={btConfig.custom2.buyDay} onChange={e => setBtConfig({...btConfig, custom2: {...btConfig.custom2, buyDay: parseInt(e.target.value)}})} className="w-12 bg-black border border-slate-700 text-white p-1 text-[10px]" />
+                                                    <select value={btConfig.custom2.buyField} onChange={e => setBtConfig({...btConfig, custom2: {...btConfig.custom2, buyField: e.target.value as any}})} className="flex-1 bg-black border border-slate-700 text-white p-1 text-[10px]">
+                                                        <option value="open">Open</option>
+                                                        <option value="close">Close</option>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="space-y-2 border-t border-slate-800 pt-3">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[10px] text-slate-500 font-tech uppercase">Sell Rules</label>
+                                                <button onClick={() => {
+                                                    const newRules = [...btConfig.custom2.sellRules, { conditionDay: 4, conditionField: 'open', conditionType: 'higher', action: 'immediate', actionDayOffset: 0 }];
+                                                    setBtConfig({...btConfig, custom2: {...btConfig.custom2, sellRules: newRules as any}});
+                                                }} className="text-[10px] text-cyan-400 hover:text-cyan-300 font-code">+ ADD RULE</button>
+                                            </div>
+                                            {btConfig.custom2.sellRules.map((rule, idx) => (
+                                                <div key={idx} className="space-y-2 bg-black/30 p-2 border border-slate-800/50">
+                                                    <div className="flex flex-wrap gap-2 items-center">
+                                                        <span className="text-[10px] text-slate-600 font-code">If Day</span>
+                                                        <input type="number" value={rule.conditionDay} onChange={e => {
+                                                            const newRules = [...btConfig.custom2.sellRules];
+                                                            newRules[idx].conditionDay = parseInt(e.target.value);
+                                                            setBtConfig({...btConfig, custom2: {...btConfig.custom2, sellRules: newRules}});
+                                                        }} className="w-10 bg-black border border-slate-700 text-white p-1 text-[10px]" />
+                                                        <select value={rule.conditionType} onChange={e => {
+                                                            const newRules = [...btConfig.custom2.sellRules];
+                                                            newRules[idx].conditionType = e.target.value as any;
+                                                            setBtConfig({...btConfig, custom2: {...btConfig.custom2, sellRules: newRules}});
+                                                        }} className="bg-black border border-slate-700 text-white p-1 text-[10px]">
+                                                            <option value="higher">High Open</option>
+                                                            <option value="lower">Low Open</option>
+                                                            <option value="lower_and_down">Low Open & Close &lt; Open</option>
+                                                        </select>
+                                                        <span className="text-[10px] text-slate-600 font-code">then</span>
+                                                        <select value={rule.action} onChange={e => {
+                                                            const newRules = [...btConfig.custom2.sellRules];
+                                                            newRules[idx].action = e.target.value as any;
+                                                            setBtConfig({...btConfig, custom2: {...btConfig.custom2, sellRules: newRules}});
+                                                        }} className="bg-black border border-slate-700 text-white p-1 text-[10px]">
+                                                            <option value="immediate">Sell Immediately</option>
+                                                            <option value="close">Sell at Close</option>
+                                                            <option value="nextOpen">Sell Next Open</option>
+                                                            <option value="nextClose">Sell Next Close</option>
+                                                        </select>
+                                                        <button onClick={() => {
+                                                            const newRules = btConfig.custom2.sellRules.filter((_, i) => i !== idx);
+                                                            setBtConfig({...btConfig, custom2: {...btConfig.custom2, sellRules: newRules}});
+                                                        }} className="text-rose-500 hover:text-rose-400 ml-auto">×</button>
+                                                    </div>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 )}
