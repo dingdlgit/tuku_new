@@ -81,8 +81,98 @@ app.post('/api/process', async (req, res) => {
   try {
     let p;
     if (options.rawWidth && options.rawHeight) {
-      const isFourChannel = ['rgba', 'bgra', 'uyvy'].includes(options.rawPixelFormat || '');
-      p = sharp(filePath, { raw: { width: options.rawWidth, height: options.rawHeight, channels: isFourChannel ? 4 : 3 } });
+      const rawFormat = options.rawPixelFormat || 'rgb';
+      const width = options.rawWidth;
+      const height = options.rawHeight;
+      const buffer = fs.readFileSync(filePath);
+      
+      let processedBuffer = buffer;
+      let channels = 3;
+
+      if (rawFormat === 'uyvy') {
+        processedBuffer = Buffer.alloc(width * height * 3);
+        let j = 0;
+        const maxI = Math.min(buffer.length, width * height * 2);
+        for (let i = 0; i < maxI; i += 4) {
+          const u = buffer[i] - 128;
+          const y0 = buffer[i + 1];
+          const v = buffer[i + 2] - 128;
+          const y1 = buffer[i + 3];
+
+          let r0 = y0 + 1.402 * v;
+          let g0 = y0 - 0.344136 * u - 0.714136 * v;
+          let b0 = y0 + 1.772 * u;
+
+          let r1 = y1 + 1.402 * v;
+          let g1 = y1 - 0.344136 * u - 0.714136 * v;
+          let b1 = y1 + 1.772 * u;
+
+          if (j < processedBuffer.length) processedBuffer[j++] = Math.max(0, Math.min(255, r0));
+          if (j < processedBuffer.length) processedBuffer[j++] = Math.max(0, Math.min(255, g0));
+          if (j < processedBuffer.length) processedBuffer[j++] = Math.max(0, Math.min(255, b0));
+          if (j < processedBuffer.length) processedBuffer[j++] = Math.max(0, Math.min(255, r1));
+          if (j < processedBuffer.length) processedBuffer[j++] = Math.max(0, Math.min(255, g1));
+          if (j < processedBuffer.length) processedBuffer[j++] = Math.max(0, Math.min(255, b1));
+        }
+      } else if (rawFormat === 'nv21') {
+        processedBuffer = Buffer.alloc(width * height * 3);
+        const ySize = width * height;
+        let j = 0;
+        for (let y = 0; y < height; y++) {
+          for (let x = 0; x < width; x++) {
+            const yIndex = y * width + x;
+            const uvIndex = ySize + Math.floor(y / 2) * width + Math.floor(x / 2) * 2;
+            const yVal = buffer[yIndex];
+            const vVal = buffer[uvIndex] - 128;
+            const uVal = buffer[uvIndex + 1] - 128;
+
+            let r = yVal + 1.402 * vVal;
+            let g = yVal - 0.344136 * uVal - 0.714136 * vVal;
+            let b = yVal + 1.772 * uVal;
+
+            processedBuffer[j++] = Math.max(0, Math.min(255, r));
+            processedBuffer[j++] = Math.max(0, Math.min(255, g));
+            processedBuffer[j++] = Math.max(0, Math.min(255, b));
+          }
+        }
+      } else if (rawFormat === 'bgra') {
+        channels = 4;
+        const size = width * height * 4;
+        processedBuffer = Buffer.alloc(size);
+        const maxI = Math.min(buffer.length, size);
+        for (let i = 0; i < maxI; i += 4) {
+          processedBuffer[i] = buffer[i + 2];     // R
+          processedBuffer[i + 1] = buffer[i + 1]; // G
+          processedBuffer[i + 2] = buffer[i];     // B
+          processedBuffer[i + 3] = buffer[i + 3]; // A
+        }
+      } else if (rawFormat === 'bgr') {
+        channels = 3;
+        const size = width * height * 3;
+        processedBuffer = Buffer.alloc(size);
+        const maxI = Math.min(buffer.length, size);
+        for (let i = 0; i < maxI; i += 3) {
+          processedBuffer[i] = buffer[i + 2];     // R
+          processedBuffer[i + 1] = buffer[i + 1]; // G
+          processedBuffer[i + 2] = buffer[i];     // B
+        }
+      } else if (rawFormat === 'rgba') {
+        channels = 4;
+        const size = width * height * 4;
+        if (buffer.length !== size) {
+          processedBuffer = Buffer.alloc(size);
+          buffer.copy(processedBuffer, 0, 0, Math.min(buffer.length, size));
+        }
+      } else {
+        channels = 3;
+        const size = width * height * 3;
+        if (buffer.length !== size) {
+          processedBuffer = Buffer.alloc(size);
+          buffer.copy(processedBuffer, 0, 0, Math.min(buffer.length, size));
+        }
+      }
+
+      p = sharp(processedBuffer, { raw: { width, height, channels } });
     } else if (fileName.toLowerCase().endsWith('.bmp')) {
       try { p = sharp(filePath); await p.metadata(); } catch (e) {
         const buffer = fs.readFileSync(filePath);

@@ -130,6 +130,14 @@ function App() {
       return exts.some(ext => filename.toLowerCase().endsWith(ext));
   };
 
+  const extractDimensionsFromFilename = (filename: string) => {
+    const match = filename.match(/(\d+)[xX*](\d+)/);
+    if (match) {
+      return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
+    }
+    return null;
+  };
+
   const handleFileUpload = async (file: File) => {
     setIsUploading(true);
     setResult(null);
@@ -159,14 +167,15 @@ function App() {
       
       const suggestedFormat = getFormatFromExt(data.originalName);
       const isRaw = isRawFormat(data.originalName);
+      const extractedDims = isRaw ? extractDimensionsFromFilename(data.originalName) : null;
 
       setOptions({
         ...defaultOptions,
         format: ImageFormat.ORIGINAL,
         width: data.width || null,
         height: data.height || null,
-        rawWidth: isRaw ? (data.width || 1920) : undefined,
-        rawHeight: isRaw ? (data.height || 1080) : undefined,
+        rawWidth: isRaw ? (data.width || extractedDims?.width || 1920) : undefined,
+        rawHeight: isRaw ? (data.height || extractedDims?.height || 1080) : undefined,
         rawPixelFormat: suggestedFormat
       });
     } catch (error: any) {
